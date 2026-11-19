@@ -94,6 +94,12 @@
 #ifndef BMS_SWITCHBOT_ON
 #define BMS_SWITCHBOT_ON 1
 #endif
+// Simarine STRx (STR1 analog, STR2 NMEA 2000, STR3 RV-C): Tankfuellstand in Werbepaketen ("Broadcast Mode" in der
+// Simarine-App einschalten). Offen lesbar oder AES-CCM mit dem Schluessel aus der App (32 Hex-Zeichen im Feld PIN /
+// Passwort). BETA, ungetestet. Nach der oeffentlichen Spezifikation Simarine/strx-ble-broadcast-protocol.
+#ifndef BMS_SIMARINE_ON
+#define BMS_SIMARINE_ON 1
+#endif
 #define BMS_TANKS 4   // Kanaele je SuperSense-Tankmodul
 
 #define BMS_MAX 6
@@ -112,7 +118,8 @@ enum BmsModel : uint8_t {
   BMS_ECOFLOW = 24 /*Delta 2, River 2*/, BMS_ECOFLOW_PB = 25 /*River 3, Delta 3*/,
   BMS_SS_TANK = 26,  // SuperSense Tankmodul (SSBT)
   BMS_RUUVI = 27,    // Ruuvi Tag / Air (nur Werbepakete)
-  BMS_SWITCHBOT = 28 // SwitchBot Meter / Meter Plus / Outdoor Meter (nur Werbepakete)
+  BMS_SWITCHBOT = 28,// SwitchBot Meter / Meter Plus / Outdoor Meter (nur Werbepakete)
+  BMS_SIMARINE = 29  // Simarine STRx Tanksensor (nur Werbepakete)
 };
 
 // Geraeteart (bestimmt die Kachel: Akku/Shunt = Batteriewaechter, sonst Solar, Ladebooster, Wechselrichter)
@@ -167,6 +174,10 @@ struct BmsInfo {
   // Klima-Sensor (BMS_DEV_CLIMATE): temp = Temperatur, volt = Batterie; NAN/-1 = nicht gemeldet
   float hum = NAN, press = NAN, pm25 = NAN;   // % rF, hPa, µg/m³
   int co2 = -1;                               // ppm (Ruuvi Air)
+  // Simarine STRx: Inhalt in l (NAN = Kapazitaet unbekannt), Tankart 0 sonstige, 1 Frisch-, 2 Grau-, 3 Schwarzwasser,
+  // 4 Kraftstoff (-1 unbekannt), Modus 1..3 verschluesselt / 4 offen (0 unbekannt)
+  float tank_l = NAN, tank_cap_l = NAN;
+  int tank_kind = -1, sm_mode = 0;
 };
 
 struct BmsFound {

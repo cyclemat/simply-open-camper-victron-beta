@@ -2,4 +2,4 @@
 // Updater. GitHub liest sie beim Veroeffentlichen hier aus (release/versionen.txt). Fuer eine neue Version nur hier
 // aendern.
 #pragma once
-#define SOC_VERSION "0.2.1"
+#define SOC_VERSION "0.2.3"

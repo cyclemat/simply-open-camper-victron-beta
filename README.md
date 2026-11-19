@@ -42,6 +42,7 @@ MultiPlus-Steuerung (Strombegrenzung/Schalter) und Bluetooth-Ladegeräte. Rückm
 | 🔋 **Cerbo GX** (optional) | Batterie, Solar (Summe und jeder Laderegler einzeln), Netz/Landstrom, Ladegerät, Wechselrichter, DC-DC-Lader (Orion XS/Smart), Lichtmaschinenregler, DC-System – per MQTT im WLAN, der GX wird automatisch gefunden |
 | 🔥 **Truma LevelControl** | Füllstand der Gasflaschen (%, kg, Akku des Sensors) per Bluetooth, bis zu 4 Sensoren |
 | 💧 **SuperSense** *(Beta)* | Tankmodul „SSBT…“ (bis 4 Tanksensoren, auch SuperSense PRO mit Bluetooth) per Bluetooth – **ungetestet**, Rückmeldungen willkommen |
+| 💧 **Simarine STRx** *(Beta)* | Tanksensoren STR1/STR2/STR3 per Bluetooth-Broadcast – offen oder mit dem Schlüssel aus der Simarine-App, **kein App-Key nötig** – **ungetestet** |
 | 🌡️ **Ruuvi** *(Beta)* | Ruuvi Tag / Ruuvi Air per Bluetooth: Temperatur, Luftfeuchte, Luftdruck (Air: CO₂, Feinstaub) – **ungetestet** |
 | 🌡️ **SwitchBot** *(Beta)* | Thermo-Hygrometer Meter, Meter Plus, Outdoor Meter per Bluetooth: Temperatur, Luftfeuchte, Batterie – **ungetestet** |
 | 🛢️ **Mopeka** | Gasflaschen und Tanks per Bluetooth (Pro Check, Pro Plus, Pro Check Universal/H2O, Pro-200, TD40/TD200, Lippert BottleCheck, Check Standard/XL), bis zu 4 Sensoren |
@@ -187,6 +188,26 @@ Bluetooth startet erst, wenn ein Gerät eingerichtet ist oder gesucht wird.
 
 Das Protokoll ist nachgebaut, nicht vom Hersteller dokumentiert. Bitte meldet, ob die Werte stimmen (Issue).
 
+### Simarine STRx-Tanksensoren (Beta, ungetestet)
+
+Die Simarine-Tanksensoren **STR1** (analog), **STR2** (NMEA 2000) und **STR3** (RV-C) können ihren Füllstand per
+Bluetooth senden („Broadcast“). Das Display hört nur mit – keine Kopplung, **kein App-Key nötig**.
+
+1. In der App **Simarine Connect** den Tank einrichten (Höhe, Inhalt, Tankart, Kalibrierung).
+2. Je Sensor **Device Management → Broadcast Settings → Broadcast Mode** einschalten – **ab Werk ist er aus**.
+3. Modus wählen:
+   - **Open** – Füllstand, Inhalt und Tankart für jeden lesbar. Nichts weiter einzutragen; am einfachsten zum Ausprobieren.
+   - **Low / Medium / High Security** – Füllstand verschlüsselt. Jeder Sensor hat **seinen eigenen Schlüssel**: in der
+     App **Show Encryption Key** antippen und die **32 Zeichen** beim Hinzufügen bzw. später im Feld **PIN / Passwort**
+     eintragen. Der Schlüssel ist nicht die 4-stellige Geräte-PIN der App. Bei Medium/High sendet der Sensor Inhalt und
+     Tankart nicht mit – dann zeigt das Display nur Prozent.
+4. **Simarine-App schließen bzw. vom Sensor trennen** – solange ein Handy verbunden ist, sendet der Sensor nicht.
+5. In der Weboberfläche bei **Akkus und Power Stations per Bluetooth** „Akkus suchen“. Der Sensor erscheint als „Simarine STRx“. Hinzufügen –
+   Kachel mit Füllstand, im Detail Inhalt in Litern, Tankart und ob der Funk offen oder verschlüsselt ist.
+
+Fehlt der Wert, steht der Grund im Status: Broadcast aus, Schlüssel fehlt, Schlüssel passt nicht. Wird der Schlüssel in
+der Simarine-App neu erzeugt, den neuen eintragen. Nicht als einzige Messung für sicherheitskritische Füllstände nutzen.
+
 ### Ruuvi und SwitchBot (Beta, ungetestet)
 
 Ruuvi Tag und Ruuvi Air senden ihre Werte offen per Bluetooth – keine Kopplung, kein Passwort, die Ruuvi-App darf
@@ -310,6 +331,10 @@ Eigenes Startbild: `splash_cyd.jpg` (320×240, JPEG „baseline“) in den Proje
   „Jetzt messen“ drücken.
 - **Cerbo trennt ab und zu?** Meist schwaches WLAN – näher an den GX oder dessen eigenes WLAN verwenden.
 
+## 📝 Änderungen
+
+Was sich von Version zu Version geändert hat: **[CHANGELOG.md](CHANGELOG.md)**
+
 ## 🔗 Fehler und Wünsche
 
 Bitte hier als [Issue](../../issues) melden. Der Code wird automatisch aktualisiert – Pull Requests werden deshalb
@@ -322,7 +347,7 @@ nicht direkt übernommen, sondern von Hand eingearbeitet (siehe [CONTRIBUTING.md
 
 Lean firmware for the ESP32-2432S028R "Cheap Yellow Display" ([buy on Amazon](https://link.amazon/B00jjmvuF)): shows all Victron values and gas levels as tiles –
 from a Cerbo GX via WiFi (MQTT on LAN, auto-discovery, optional), from Victron devices via Bluetooth (Instant
-Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense tank modules, Ruuvi and SwitchBot climate sensors as untested beta. Tap a
+Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense and Simarine STRx tank sensors (open or with the sensor's own key, no app key needed), Ruuvi and SwitchBot climate sensors as untested beta. Tap a
 tile to set the MultiPlus input current limit and mode. Setup: join WiFi `SOC-Victron-XXXXXX` (default password
 `panelsat`), the setup page opens automatically (captive portal, http://4.3.2.1/), set your own access password
 (web UI), then your WiFi. The setup WiFi password is separate (default `panelsat`, can be changed or switched off).

@@ -49,6 +49,7 @@ const char *bms_model_text(BmsModel m) {
     case BMS_SS_TANK: return "SuperSense Tankmodul";
     case BMS_RUUVI: return "Ruuvi";
     case BMS_SWITCHBOT: return "SwitchBot Meter";
+    case BMS_SIMARINE: return "Simarine STRx";
     default: return "Akku";
   }
 }
@@ -68,7 +69,8 @@ BmsDev bms_dev_of(BmsModel m) {
     case BMS_ANKER_F3800:
     case BMS_ECOFLOW:
     case BMS_ECOFLOW_PB: return BMS_DEV_PSTATION;
-    case BMS_SS_TANK: return BMS_DEV_TANK;
+    case BMS_SS_TANK:
+    case BMS_SIMARINE: return BMS_DEV_TANK;
     case BMS_RUUVI:
     case BMS_SWITCHBOT: return BMS_DEV_CLIMATE;
     default: return BMS_DEV_BATTERY;
@@ -197,6 +199,13 @@ struct Bat {
   std::vector<uint16_t> cell_mv;
   float hum = NAN, press = NAN, pm25 = NAN;   // Klima-Sensor (Ruuvi)
   int co2 = -1;
+  // Simarine STRx: letzte Metadaten (Scan-Antwort) und Schutz gegen wiederholte Pakete
+  bool sm_meta = false, sm_secure = false, sm_seen = false;
+  uint8_t sm_prod = 0, sm_mode = 0, sm_kind = 0xFF, sm_cfg = 0xFF;
+  uint16_t sm_serial = 0, sm_boot = 0, sm_cap = 0xFFFF, sm_permille = 0xFFFF;
+  uint32_t sm_meta_ms = 0;
+  uint64_t sm_last = 0;
+  std::string sm_err;   // Grund, warum es keinen Wert gibt (Status)
   uint32_t alarms = 0;
   bool chg_on = true, dis_on = true;
   std::string rx;   // Empfangspuffer (Notify)
@@ -219,7 +228,7 @@ struct Bat {
     return model != BMS_SUPERB && model != BMS_UNKNOWN && !adv_only() && !is_anker(model) && !is_ecoflow(model);
   }
   bool adv_only() const {   // nur Werbepakete (Ruuvi, SwitchBot), nie verbinden
-    return model == BMS_RUUVI || model == BMS_SWITCHBOT;
+    return model == BMS_RUUVI || model == BMS_SWITCHBOT || model == BMS_SIMARINE;
   }
   int8_t daly_x81 = -1;    // Daly: -1 noch unbekannt, 0 Protokoll D2, 1 Protokoll 0x81 (Antwort 0x51)
   int jk_sw = -1;          // JK: Firmware-Hauptversion (ab 11 Aufbau 32S)
@@ -1407,6 +1416,106 @@ static void ruuvi_take(Bat &b, const RuuviVals &v, int rssi) {
 }
 #endif
 
+#if BMS_SIMARINE_ON
+// Simarine STRx (oeffentliche Spezifikation "STRx BLE advertising" v1.0.0), Werte Little Endian.
+// Werbepaket, Dienstdaten ea4a9703-…, 10 Byte: [0..2] Folgenummer, [3..4] Fuellstand in Promille (bzw. verschluesselt),
+//   [5..8] Pruefwert (offen: 0), [9] Konfigurationszaehler (Bit 0..3).
+// Scan-Antwort, Dienstdaten ea4a96f3-…: [0] Produkt (1 STR1, 2 STR2, 3 STR3), [1..2] Protokoll Haupt/Neben, [3..4] Serien-
+//   nummer (letzte 4 Ziffern), [5] Modus (Bit 0..3: 0 aus, 1 hoch, 2 mittel, 3 niedrig, 4 offen), [6..7] Startzaehler,
+//   [8..9] Inhalt l (0xFFFF unbekannt), [10] Tankart (0xFF unbekannt).
+// Verschluesselt: AES-128-CCM, 2 Byte, Pruefwert 4 Byte, Nonce 13 Byte = Serie LE16, Start LE16, Folge LE24, Konfig, 5x 0;
+//   Zusatzdaten 1 Byte = Modus.
+#include <mbedtls/ccm.h>
+static const char *SM_ADV_UUID = "ea4a9703-a497-42a7-a177-f5a0b3214a0e";
+static const char *SM_META_UUID = "ea4a96f3-a497-42a7-a177-f5a0b3214a0e";
+static bool sm_key(const std::string &hex, uint8_t key[16]) {
+  if (hex.size() != 32) return false;
+  for (int i = 0; i < 16; i++) {
+    unsigned v;
+    if (sscanf(hex.c_str() + i * 2, "%2x", &v) != 1) return false;
+    key[i] = (uint8_t)v;
+  }
+  return true;
+}
+// Werbepaket eines eingerichteten STRx auswerten (unter Lock); meta = Scan-Antwort (leer, wenn nicht dabei)
+static void sm_take(Bat &b, const std::string &adv, const std::string &meta, int rssi) {
+  const uint8_t *m = (const uint8_t *)meta.data();
+  if (meta.size() >= 11) {
+    if (m[1] != 1) {   // anderes Protokoll: nicht raten
+      b.sm_err = "Unbekannte Protokollversion " + std::to_string(m[1]) + "." + std::to_string(m[2]);
+      b.sm_meta = false;
+    } else {
+      b.sm_prod = m[0];
+      b.sm_serial = m[3] | m[4] << 8;
+      b.sm_mode = m[5] & 0x0F;
+      b.sm_boot = m[6] | m[7] << 8;
+      b.sm_cap = m[8] | m[9] << 8;
+      b.sm_kind = m[10];
+      b.sm_meta = true;
+      b.sm_meta_ms = millis();
+      if (b.sm_mode >= 1 && b.sm_mode <= 3) b.sm_secure = true;
+    }
+  }
+  if (adv.size() != 10) return;
+  const uint8_t *a = (const uint8_t *)adv.data();
+  uint8_t cfg = a[9] & 0x0F;
+  if (b.sm_cfg != 0xFF && cfg != b.sm_cfg) b.sm_meta = false;   // Einstellungen geaendert: neue Metadaten abwarten
+  b.sm_cfg = cfg;
+  b.rssi = rssi;
+  bool zero_tag = !a[5] && !a[6] && !a[7] && !a[8];
+  uint8_t key[16];
+  bool has_key = sm_key(b.pin, key);
+  uint16_t lvl = 0xFFFF;
+  if (zero_tag && (!b.sm_meta || b.sm_mode == 4)) {   // offen
+    if (b.sm_secure || has_key) {
+      b.sm_err = "Unverschluesselt, obwohl ein Schluessel eingetragen ist – Paket verworfen";
+      return;
+    }
+    lvl = a[3] | a[4] << 8;
+  } else {
+    if (!has_key) {
+      b.sm_err = "Verschluesselt – Schluessel aus der Simarine-App (32 Zeichen) als PIN / Passwort eintragen";
+      return;
+    }
+    if (!b.sm_meta) {
+      b.sm_err = "Warte auf Geraetedaten …";
+      return;
+    }
+    uint32_t seq = a[0] | a[1] << 8 | (uint32_t)a[2] << 16;
+    uint64_t full = (uint64_t)b.sm_boot << 24 | seq;
+    if (b.sm_seen && full <= b.sm_last) return;   // Wiederholung
+    uint8_t nonce[13] = {(uint8_t)b.sm_serial, (uint8_t)(b.sm_serial >> 8), (uint8_t)b.sm_boot, (uint8_t)(b.sm_boot >> 8),
+                         a[0], a[1], a[2], cfg, 0, 0, 0, 0, 0};
+    uint8_t mode = b.sm_mode, plain[2];
+    mbedtls_ccm_context c;
+    mbedtls_ccm_init(&c);
+    int rc = mbedtls_ccm_setkey(&c, MBEDTLS_CIPHER_ID_AES, key, 128);
+    if (!rc) rc = mbedtls_ccm_auth_decrypt(&c, 2, nonce, 13, &mode, 1, a + 3, plain, a + 5, 4);
+    mbedtls_ccm_free(&c);
+    if (rc) {
+      b.sm_err = "Schluessel passt nicht";
+      return;
+    }
+    b.sm_seen = true;
+    b.sm_last = full;
+    lvl = plain[0] | plain[1] << 8;
+  }
+  if (lvl > 1000) {
+    b.sm_err = "Kein gueltiger Fuellstand";
+    return;
+  }
+  bool ch = !b.has || lvl != b.sm_permille || !b.last_ms || millis() - b.last_ms > 60000;
+  if (!b.has) logf("%s: Fuellstand %.1f %%", b.name.c_str(), lvl / 10.0f);
+  b.sm_permille = lvl;
+  b.sm_err.clear();
+  b.has = true;
+  b.flags = 0x01;
+  b.status = "OK";
+  b.last_ms = millis();
+  if (ch) s_ver++;
+}
+#endif
+
 bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   bool ruuvi = false;
 #if BMS_RUUVI_ON
@@ -1451,6 +1560,25 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
     }
   }
 #endif
+  bool strx = false;
+#if BMS_SIMARINE_ON
+  if (!ruuvi && !sbot && dev->haveServiceData()) {
+    std::string adv = dev->getServiceData(NimBLEUUID(SM_ADV_UUID)), meta = dev->getServiceData(NimBLEUUID(SM_META_UUID));
+    if (!adv.empty() || !meta.empty()) {
+      std::string mac = lower(dev->getAddress().toString());
+      {
+        Lock l;
+        Bat *b = find_mac(mac);
+        if (b) {
+          if (b->model == BMS_SIMARINE && !b->remove) sm_take(*b, adv, meta, dev->getRSSI());
+          return true;
+        }
+      }
+      if (!s_disc_until) return true;
+      strx = true;
+    }
+  }
+#endif
   if (!s_disc_until) return false;
   bool svc = dev->isAdvertisingService(NimBLEUUID(SB_SERVICE)) || dev->isAdvertisingService(NimBLEUUID(SB2_SERVICE));
   if (!svc && dev->haveManufacturerData()) {   // Epsilon V2: Hersteller-ID 0x50BE
@@ -1469,7 +1597,8 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   if (ss) model = BMS_SS_TANK;   // SuperSense Tankmodul (Name "SSBT…" bzw. Dienst)
   if (ruuvi) model = BMS_RUUVI;
   if (sbot) model = BMS_SWITCHBOT;
-  if (!svc && !hint && !ss && !ruuvi && !sbot) {
+  if (strx) model = BMS_SIMARINE;
+  if (!svc && !hint && !ss && !ruuvi && !sbot && !strx) {
     model = pq_detect(name, dev->haveManufacturerData() ? dev->getManufacturerData() : std::string(), &prod);
     std::string un = name;
     for (auto &ch : un) ch = toupper((unsigned char)ch);
@@ -1582,6 +1711,7 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
       case BMS_SS_TANK: on = BMS_SUPERSENSE_ON; break;
       case BMS_RUUVI: on = BMS_RUUVI_ON; break;
       case BMS_SWITCHBOT: on = BMS_SWITCHBOT_ON; break;
+      case BMS_SIMARINE: on = BMS_SIMARINE_ON; break;
       default: break;
     }
     if (!on) return false;
@@ -1627,6 +1757,8 @@ void bms_scan_wanted(bool &passive, bool &active) {
       if (!b.adv_only() || b.remove) continue;
       passive = true;
       if (b.model == BMS_SWITCHBOT && (!b.last_ms || now - b.last_ms > 90000)) active = true;
+      // Simarine: Metadaten (Inhalt, Modus, fuer die Entschluesselung) kommen nur in der Scan-Antwort
+      if (b.model == BMS_SIMARINE && (!b.sm_meta || now - b.sm_meta_ms > 600000)) active = true;
     }
   }
   if (!s_disc_until) return;
@@ -3005,9 +3137,23 @@ static BmsInfo info_of(const Bat &b) {
   i.press = b.press;
   i.pm25 = b.pm25;
   i.co2 = b.co2;
+  if (b.model == BMS_SIMARINE) {
+    if (b.has) i.tank_pct[0] = (int)lroundf(b.sm_permille / 10.0f);
+    i.tank_raw[0] = b.has ? b.sm_permille : -1;
+    i.tank_temp[0] = NAN;
+    if (b.sm_meta && b.sm_cap != 0xFFFF) {
+      i.tank_cap_l = b.sm_cap;
+      if (b.has) i.tank_l = b.sm_permille * b.sm_cap / 1000.0f;
+    }
+    i.tank_kind = b.sm_meta && b.sm_kind <= 4 ? b.sm_kind : -1;
+    i.sm_mode = b.sm_meta ? b.sm_mode : 0;
+  }
   if (b.adv_only()) {   // nur Werbepakete: "verbunden" = kuerzlich gehoert
     i.connected = b.last_ms && millis() - b.last_ms < 60000;
-    i.status = !b.has ? "Warte auf Werte …" : i.connected ? "OK" : "Keine Werte – Sensor in Reichweite?";
+    i.status = !b.sm_err.empty() && (!b.has || !i.connected) ? b.sm_err
+               : !b.has ? (b.model == BMS_SIMARINE ? "Warte auf Werte … (Broadcast in der Simarine-App an? App getrennt?)"
+                                                    : "Warte auf Werte …")
+               : i.connected ? "OK" : "Keine Werte – Sensor in Reichweite?";
   }
   return i;
 }
@@ -3192,7 +3338,8 @@ void bms_set_pin(const std::string &mac, const std::string &pin) {
   Lock l;
   Bat *b = find_mac(lower(mac));
   if (!b) return;
-  b->pin = digits.substr(0, 6);
+  b->pin = digits.substr(0, b->model == BMS_SIMARINE ? 32 : 6);   // Simarine: Schluessel 32 Hex-Zeichen
+  b->sm_seen = false;   // neuer Schluessel: Wiederholungsschutz neu beginnen
   if (!b->pin.empty() && b->model != BMS_JBD) b->auth_fail = true;   // alte Kopplung (ohne PIN) vor dem naechsten Versuch loeschen
   b->cs_pw_bad = false;
   b->pw_need = false;
@@ -3287,6 +3434,13 @@ std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b) {
     for (int k = 0; k < BMS_TANKS; k++)
       if (b.tank_pct[k] >= 0)
         r.emplace_back(T[k], std::to_string(b.tank_pct[k]) + " %" + (isfinite(b.tank_temp[k]) ? "  ·  " + fnum(b.tank_temp[k], 1, "°C") : std::string()));
+    if (b.model == BMS_SIMARINE) {
+      static const char *KIND[] = {"sonstige", "Frischwasser", "Grauwasser", "Schwarzwasser", "Kraftstoff"};
+      if (isfinite(b.tank_cap_l)) r.emplace_back("Inhalt", h && isfinite(b.tank_l) ? fnum(b.tank_l, 1, "l") + " / " + fnum(b.tank_cap_l, 0, "l") : std::string("–"));
+      if (b.tank_kind >= 0) r.emplace_back("Tankart", tr(KIND[b.tank_kind]));
+      r.emplace_back("Funk", b.sm_mode == 4 ? tr("offen") : b.sm_mode >= 1 ? tr("verschluesselt") : std::string("–"));
+      return r;
+    }
     if (r.empty()) r.emplace_back("Tanks", h ? std::string(tr("kein Tanksensor angeschlossen")) : std::string("–"));
     return r;
   }
