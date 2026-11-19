@@ -466,7 +466,23 @@ bool victron_from_bms(const BmsInfo &b, VictronInfo &v) {
       v.press = b.press;
       v.pm25 = b.pm25;
       v.co2 = b.co2;
-      v.soc = b.soc >= 0 ? (float)b.soc : NAN;   // Batterie % (SwitchBot)
+      v.soc = b.soc >= 0 ? (float)b.soc : NAN;   // Batterie % (SwitchBot, BTHome)
+      v.note = b.note;
+      v.power_w = NAN;
+      return true;
+    case BMS_DEV_HEATER:
+      v.kind = VIC_HEATER;
+      v.aux = b.temp;
+      v.ht_on = b.ht_on; v.ht_step = b.ht_step; v.ht_mode = b.ht_mode; v.ht_level = b.ht_level;
+      v.ht_set = b.ht_set; v.ht_err = b.ht_err; v.ht_case = b.ht_case;
+      v.power_w = NAN;
+      return true;
+    case BMS_DEV_FRIDGE:
+      v.kind = VIC_FRIDGE;
+      v.fr_on = b.fr_on; v.fr_eco = b.fr_eco; v.fr_zones = b.fr_zones; v.fr_min = b.fr_min; v.fr_max = b.fr_max;
+      for (int z = 0; z < 2; z++) v.fr_set[z] = b.fr_set[z], v.fr_cur[z] = b.fr_cur[z];
+      v.aux = b.fr_zones ? (float)b.fr_cur[0] : NAN;
+      v.soc = b.soc >= 0 ? (float)b.soc : NAN;
       v.power_w = NAN;
       return true;
     case BMS_DEV_TANK:   // SuperSense-Tankmodul

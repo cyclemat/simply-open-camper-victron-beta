@@ -43,8 +43,12 @@ MultiPlus-Steuerung (Strombegrenzung/Schalter) und Bluetooth-Ladegeräte. Rückm
 | 🔥 **Truma LevelControl** | Füllstand der Gasflaschen (%, kg, Akku des Sensors) per Bluetooth, bis zu 4 Sensoren |
 | 💧 **SuperSense** *(Beta)* | Tankmodul „SSBT…“ (bis 4 Tanksensoren, auch SuperSense PRO mit Bluetooth) per Bluetooth – **ungetestet**, Rückmeldungen willkommen |
 | 💧 **Simarine STRx** *(Beta)* | Tanksensoren STR1/STR2/STR3 per Bluetooth-Broadcast – offen oder mit dem Schlüssel aus der Simarine-App, **kein App-Key nötig** – **ungetestet** |
+| 🔥 **Dieselheizung** *(Beta)* | Vevor/Hcalory (AirHeaterBLE), HeaterCC/AirHeater – an/aus, Stufe/Temperatur, Fehler; bedienbar in der Weboberfläche – **ungetestet** |
+| 🧊 **Kühlbox** *(Beta)* | Alpicool, IceCube/Plug-in Festivals, Bodega u. a. – Ist/Soll je Zone; bedienbar in der Weboberfläche – **ungetestet** |
+| 📡 **BTHome** *(Beta)* | Shelly BLU (Tür, Bewegung, Taster, H&T), Xiaomi mit pvvx-Firmware u. v. a. – Zustand bzw. Temperatur/Feuchte, auch verschlüsselt – **ungetestet** |
 | 🌡️ **Ruuvi** *(Beta)* | Ruuvi Tag / Ruuvi Air per Bluetooth: Temperatur, Luftfeuchte, Luftdruck (Air: CO₂, Feinstaub) – **ungetestet** |
 | 🌡️ **SwitchBot** *(Beta)* | Thermo-Hygrometer Meter, Meter Plus, Outdoor Meter per Bluetooth: Temperatur, Luftfeuchte, Batterie – **ungetestet** |
+| ⚖️ **Senso4s** *(Beta)* | Gasflaschen-Waage Basic/Plus per Bluetooth – Füllstand in % und kg – **ungetestet** |
 | 🛢️ **Mopeka** | Gasflaschen und Tanks per Bluetooth (Pro Check, Pro Plus, Pro Check Universal/H2O, Pro-200, TD40/TD200, Lippert BottleCheck, Check Standard/XL), bis zu 4 Sensoren |
 | 📶 **Victron Bluetooth** | SmartSolar, SmartShunt/BMV, Orion/DC-DC, Blue Smart/Phoenix Smart Ladegeräte – „Instant Readout“, auch ganz ohne Cerbo |
 | 🔋 **Akkus per Bluetooth** | Super B, Power Quarry/Shentec, Daly/Bulltron, JBD/Xiaoxiang, CS-BATTERIES (Beta), JK-BMS, LiTime/Redodo/PowerQueen, Renogy, Eco-Worthy, ANT, Vatrer: Ladezustand, Spannung, Strom, Temperatur, Zellen – nur lesen |
@@ -180,6 +184,11 @@ Bluetooth startet erst, wenn ein Gerät eingerichtet ist oder gesucht wird.
 3. Die Sensoren senden ihre Werte von selbst – keine Kopplung, die Mopeka-App bleibt nutzbar.
    Die Kachel erscheint mit dem ersten Messwert.
 
+**Senso4s** *(Beta, ungetestet)*: Die Gasflaschen-Waage Basic/Plus wird genauso bei **Mopeka** gesucht und erscheint
+als „Senso4s Basic“ bzw. „Senso4s Plus“. Flasche und Nullabgleich vorher in der Senso4s-App einrichten, hier die
+Flaschengröße wählen (für kg). Sie meldet sich alle 15 Minuten; Hinweise wie „Nullabgleich nötig“ oder „Batterien
+leer“ stehen im Status.
+
 ### SuperSense (Beta, ungetestet)
 
 - **Tankmodul** („SSBT…“): erscheint bei **Akkus suchen** als „SuperSense Tankmodul (Beta)“. Hinzufügen – je
@@ -213,6 +222,15 @@ der Simarine-App neu erzeugt, den neuen eintragen. Nicht als einzige Messung fü
 Ruuvi Tag und Ruuvi Air senden ihre Werte offen per Bluetooth – keine Kopplung, kein Passwort, die Ruuvi-App darf
 offen bleiben. Bei **Akkus suchen** erscheint der Sensor als „Ruuvi“, hinzufügen, fertig: Kachel mit Temperatur und
 Luftfeuchte (Ruuvi Air zusätzlich CO₂), im Detail auch Luftdruck, Feinstaub und Batterie.
+
+**Dieselheizung und Kühlbox** *(Beta, ungetestet)*: werden bei „Akkus suchen“ als „Dieselheizung“ bzw. „Kühlbox“
+gefunden. Hersteller-App vorher schließen; Kühlbox beim ersten Mal ggf. Settings-Taste an der Box drücken. In der
+Akku-Karte gibt es dann Knöpfe für **Ein/Aus** und **− / +** (Heizung: Stufe bzw. Temperatur, Kühlbox: Soll). Bei einem
+Heizungsfehler (E…) ist nur noch Ausschalten möglich.
+
+**BTHome** (Shelly BLU, Xiaomi mit pvvx-Firmware …) erscheint bei „Akkus suchen“ als „BTHome“. Kachel mit
+Temperatur/Feuchte bzw. dem Zustand („Tür offen“, „Bewegung“). Verschlüsselte Geräte: Schlüssel (32 Zeichen) ins
+Feld **PIN / Passwort**.
 
 Genauso die **SwitchBot**-Thermo-Hygrometer (Meter, Meter Plus, Outdoor Meter): erscheinen als „SwitchBot Meter“,
 Kachel mit Temperatur und Luftfeuchte, im Detail der Batteriestand. Ein SwitchBot-Hub ist nicht nötig.

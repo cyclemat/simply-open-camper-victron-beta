@@ -15,6 +15,7 @@
 #define MOPEKA_MAX_SENSORS 4
 #define MOPEKA_KEY_PREFIX "mopeka:"
 #define MOPEKA_TANK_CUSTOM 255
+#define MOPEKA_NO_VALUE (-999)   // Temperatur/Qualitaet/Fuellhoehe: liefert der Sensor nicht (Senso4s)
 
 enum MopekaMedium : uint8_t { MOP_PROPANE = 0, MOP_AIR = 1, MOP_WATER = 2 };
 

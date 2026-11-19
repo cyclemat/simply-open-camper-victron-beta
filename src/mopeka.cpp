@@ -21,6 +21,14 @@ static const size_t PRO_LEN = 10, STD_LEN = 23;
 static const uint32_t DISCOVERY_MS = 3 * 60 * 1000;
 static const size_t MAX_FOUND = 12;
 static const uint32_t STALE_MS = 10 * 60 * 1000;   // so lange ohne Paket: "kein Empfang"
+// Senso4s (Gasflaschen-Waage, BETA, ungetestet): Herstellerdaten 0x0059 (Nordic) bzw. 0x09CC, 12 Byte nach der ID:
+//   [0] oben 4 Bit: 8 = Basic, sonst Plus mit Warnbits (1 Temperatur, 2 Neigung, 4 Bewegung); unten 4 Bit Modus 1..5
+//   [1] Fuellstand 0..100 % bzw. 0xFF nicht bereit (Nullabgleich), 0xFC Einstellfehler, 0xFE Batterien leer,
+//       0xF1..0xF7 Warnung beim Messbeginn; [4] Batterie %; [6..11] MAC (Reihenfolge offen: vorwaerts oder umgedreht).
+// Messung alle 15 min. Nach ksanislo/senso4s_ble (Apache-2.0), eigene Umsetzung.
+static const uint16_t MID_SENSO = 0x09CC;
+static const uint16_t MODEL_SENSO = 0x200;   // | 1 = Plus
+static const uint32_t SENSO_STALE_MS = 60 * 60 * 1000;
 
 static const MopekaTank TANKS[] = {
     {"11 kg (Europa)", 38, 366, 11},
@@ -51,6 +59,8 @@ const char *mopeka_model_text(uint16_t m) {
     case 0x103: return "Check XL";
     case 0x144: return "Check Standard";
     case 0x146: return "Check eTrailer";
+    case 0x200: return "Senso4s Basic";
+    case 0x201: return "Senso4s Plus";
     default: return "Mopeka";
   }
 }
@@ -143,6 +153,9 @@ struct Sensor {
   uint32_t good_ms = 0;      // letzter brauchbarer Messwert
   bool echo_lost = false;
   int shown_pct = -1, shown_batt = -1, shown_temp = -999, shown_q = -1;
+  // Senso4s: Fuellstand und Batterie direkt in %, Fehler-/Warncode (0 = keiner)
+  int s4_pct = -1, s4_batt = -1;
+  uint8_t s4_code = 0;
 };
 }  // namespace
 
@@ -171,7 +184,10 @@ static int batt_pct(float v) {
   return p < 0 ? 0 : p > 100 ? 100 : (int)p;
 }
 
+static bool is_senso(uint16_t model) { return (model & 0xFF00) == MODEL_SENSO; }
+
 static int pct_of(const Sensor &s) {
+  if (is_senso(s.model)) return s.s4_pct < 0 ? 0 : s.s4_pct;
   // Gilt fuer beide Richtungen: von unten (leer < voll) und von oben (leer > voll)
   if (s.full_mm == s.empty_mm) return 0;
   float p = (s.mm - s.empty_mm) * 100.0f / ((float)s.full_mm - s.empty_mm);
@@ -253,11 +269,69 @@ static void note_found(const std::string &mac, uint16_t model, int rssi, bool bu
   s_ver++;
 }
 
+// Senso4s erkennen: alle festen Felder plausibel und die MAC im Paket passt zur Funkadresse
+static bool senso_check(const std::string &mac, const uint8_t *p) {
+  uint8_t lv = p[1];
+  bool lv_ok = lv <= 100 || (lv >= 0xF1 && lv <= 0xF7) || lv == 0xFC || lv == 0xFE || lv == 0xFF;
+  if ((p[0] & 0x0F) < 1 || (p[0] & 0x0F) > 5 || !lv_ok || p[4] > 100) return false;
+  unsigned a[6];
+  if (sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x", &a[0], &a[1], &a[2], &a[3], &a[4], &a[5]) != 6) return false;
+  bool fwd = true, rev = true;
+  for (int i = 0; i < 6; i++) {
+    fwd &= p[6 + i] == a[i];
+    rev &= p[6 + i] == a[5 - i];
+  }
+  return fwd || rev;
+}
+
+static bool senso_adv(const std::string &mac, const uint8_t *p, int rssi) {
+  uint16_t model = MODEL_SENSO | ((p[0] >> 4) < 0x8 ? 1 : 0);
+  Lock l;
+  note_found(mac, model, rssi, false);
+  for (auto &s : s_sens) {
+    if (s.mac != mac) continue;
+    uint32_t now = millis();
+    s.rssi = rssi;
+    s.when_ms = now;
+    if (s.model != model) {
+      s.model = model;
+      s_ver++;
+    }
+    uint8_t lv = p[1], code = 0;
+    if (lv <= 100) {
+      s.s4_pct = lv;
+      s.has = true;
+      s.good_ms = now;
+    } else {
+      code = lv;   // Wert bleibt der letzte gemessene
+    }
+    if (model & 1) {   // Plus: dauerhafte Warnbits im oberen Halbbyte
+      uint8_t w = p[0] >> 4;
+      if (!code && w) code = 0xF0 | w;
+    }
+    s.s4_batt = p[4];
+    if (s.s4_pct != s.shown_pct || s.s4_batt != s.shown_batt || code != s.s4_code) {
+      s.shown_pct = s.s4_pct;
+      s.shown_batt = s.s4_batt;
+      s.s4_code = code;
+      s_ver++;
+    }
+    break;
+  }
+  return true;
+}
+
 bool mopeka_on_adv(const std::string &mac_in, const uint8_t *md, size_t len, int rssi) {
   if (len < 2) return false;
   uint16_t mid = md[0] | (md[1] << 8);
   const uint8_t *p = md + 2;
   size_t n = len - 2;
+  if ((mid == MID_PRO || mid == MID_SENSO) && n == 12) {   // Senso4s (gleiche Nordic-ID wie Mopeka Pro)
+    std::string mac = lower(mac_in);
+    if (!senso_check(mac, p)) return false;
+    if (!s_mtx) return true;
+    return senso_adv(mac, p, rssi);
+  }
   uint16_t model;
   bool pro;
   if (mid == MID_PRO && n == PRO_LEN && pro_model_known(p[0])) {
@@ -355,6 +429,25 @@ static MopekaInfo info_of(const Sensor &s) {
   m.quality = s.quality;
   m.rssi = s.rssi;
   m.age_s = s.when_ms ? (int32_t)((millis() - s.when_ms) / 1000) : -1;
+  if (is_senso(s.model)) {   // Waage: keine Temperatur, kein Echo, keine Fuellhoehe
+    m.medium = MOP_PROPANE;
+    m.unit = "kg";
+    m.battery = s.s4_batt < 0 ? 0 : s.s4_batt;
+    m.battery_v = 0;
+    m.temperature = MOPEKA_NO_VALUE;
+    m.quality = MOPEKA_NO_VALUE;
+    m.level_mm = MOPEKA_NO_VALUE;
+    if (!s.when_ms) m.status = "Warte auf Sensor … (misst alle 15 Minuten)";
+    else if (millis() - s.when_ms > SENSO_STALE_MS) m.status = "Kein Empfang – außer Reichweite?";
+    else if (s.s4_code == 0xFF) m.status = "Nicht bereit – Nullabgleich in der Senso4s-App";
+    else if (s.s4_code == 0xFC) m.status = "Einstellfehler – Flaschengewicht/Inhalt in der Senso4s-App prüfen";
+    else if (s.s4_code == 0xFE) m.status = "Batterien leer";
+    else if (s.s4_code) {
+      uint8_t w = s.s4_code >= 0xF1 && s.s4_code <= 0xF7 ? s.s4_code - 0xF0 : s.s4_code & 0x0F;
+      m.status = std::string("Warnung:") + (w & 1 ? " Temperatur" : "") + (w & 2 ? " Neigung" : "") + (w & 4 ? " Bewegung" : "");
+    } else m.status = "OK";
+    return m;
+  }
   if (!s.when_ms) m.status = "Warte auf Sensor …";
   else if (millis() - s.when_ms > STALE_MS) m.status = "Kein Empfang – außer Reichweite?";
   else if (s.echo_lost) m.status = "Kein Echo – Sensor richtig angebracht?";

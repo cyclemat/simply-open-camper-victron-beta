@@ -118,6 +118,8 @@
 ["'gespeichert':'keine'", "'saved':'none'"],
 ["– Akku verlangt eine PIN", "– battery requires a PIN"],
 ["'aus':'ein'", "'off':'on'"],
+["\">Heizung ${", "\">Heater ${"],
+["\">Kühlbox ${", "\">Fridge ${"],
 ["Noch kein Akku eingerichtet.", "No battery set up yet."],
 ["'Renogy Laderegler'", "'Renogy charge controller'"],
 ["'Renogy DC-DC-Lader'", "'Renogy DC-DC charger'"],

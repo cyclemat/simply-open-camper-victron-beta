@@ -460,13 +460,26 @@ static void collect_raw(ItemList &s_items) {
       }
       continue;
     }
+    if (b.dev == BMS_DEV_HEATER || b.dev == BMS_DEV_FRIDGE) {   // Dieselheizung / Kuehlbox
+      Item it;
+      it.key = "b:" + b.mac;
+      bool heat = b.dev == BMS_DEV_HEATER;
+      it.name = b.name.empty() ? std::string(heat ? tr("Heizung") : tr("Kühlbox")) : b.name;
+      it.icon = heat ? ICON_FLAME : ICON_KITCHEN;
+      it.value = bms_value_text(b);
+      int on = heat ? b.ht_on : b.fr_on;
+      it.accent = !b.connected && b.age_s > 120 ? C_TEXT3 : heat && b.ht_err ? C_RED : on == 1 ? (heat ? C_AMBER : C_BLUE) : C_TEXT3;
+      s_items.push_back(it);
+      continue;
+    }
     if (b.dev == BMS_DEV_CLIMATE) {   // Ruuvi: Temperatur  ·  Feuchte (CO2)
       Item it;
       it.key = "b:" + b.mac;
       it.name = b.name.empty() ? std::string("Ruuvi") : b.name;
       it.icon = ICON_THERMO;
-      it.value = num(b.temp, 1, "°C");
+      it.value = isfinite(b.temp) || b.note.empty() ? num(b.temp, 1, "°C") : b.note;
       if (isfinite(b.hum)) it.value += "  ·  " + num(b.hum, 0, "%");
+      if (isfinite(b.temp) && !b.note.empty()) it.value += "  ·  " + b.note;
       if (b.co2 >= 0) it.value += "  ·  " + std::to_string(b.co2) + " ppm";
       it.accent = b.connected ? C_BLUE : C_TEXT3;
       s_items.push_back(it);

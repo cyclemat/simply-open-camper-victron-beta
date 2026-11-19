@@ -100,6 +100,20 @@
 #ifndef BMS_SIMARINE_ON
 #define BMS_SIMARINE_ON 1
 #endif
+// BTHome v2 (offener Standard: Shelly BLU, Xiaomi mit pvvx-Firmware …): Werte in Werbepaketen (Dienst 0xFCD2), optional
+// AES-CCM mit Geraeteschluessel (32 Hex im Feld PIN / Passwort). BETA, ungetestet. docs/protokolle/bthome_v2.md
+#ifndef BMS_BTHOME_ON
+#define BMS_BTHOME_ON 1
+#endif
+// China-Dieselheizung (Vevor/Hcalory AA55/AA66 auch verschluesselt, HeaterCC/AirHeater ABBA) und Kompressor-Kuehlbox
+// (Alpicool/Bodega/Brass Monkey): verbinden, lesen, bedienen. BETA, ungetestet. docs/protokolle/dieselheizung_ble.md,
+// kuehlbox_ble.md
+#ifndef BMS_HEATER_ON
+#define BMS_HEATER_ON 1
+#endif
+#ifndef BMS_FRIDGE_ON
+#define BMS_FRIDGE_ON 1
+#endif
 #define BMS_TANKS 4   // Kanaele je SuperSense-Tankmodul
 
 #define BMS_MAX 6
@@ -119,14 +133,19 @@ enum BmsModel : uint8_t {
   BMS_SS_TANK = 26,  // SuperSense Tankmodul (SSBT)
   BMS_RUUVI = 27,    // Ruuvi Tag / Air (nur Werbepakete)
   BMS_SWITCHBOT = 28,// SwitchBot Meter / Meter Plus / Outdoor Meter (nur Werbepakete)
-  BMS_SIMARINE = 29  // Simarine STRx Tanksensor (nur Werbepakete)
+  BMS_SIMARINE = 29, // Simarine STRx Tanksensor (nur Werbepakete)
+  BMS_BTHOME = 30,   // BTHome v2 (nur Werbepakete)
+  BMS_HEATER = 31,   // China-Dieselheizung
+  BMS_FRIDGE = 32    // Kompressor-Kuehlbox
 };
 
 // Geraeteart (bestimmt die Kachel: Akku/Shunt = Batteriewaechter, sonst Solar, Ladebooster, Wechselrichter)
 enum BmsDev : uint8_t {
   BMS_DEV_BATTERY = 0, BMS_DEV_SOLAR = 1, BMS_DEV_DCDC = 2, BMS_DEV_INVERTER = 3, BMS_DEV_SHUNT = 4, BMS_DEV_PSTATION = 5,
   BMS_DEV_TANK = 6,  // Tankmodul: tank_pct/tank_temp je Kanal
-  BMS_DEV_CLIMATE = 7   // Klima-Sensor (Ruuvi): temp, hum, press, co2, pm25
+  BMS_DEV_CLIMATE = 7,  // Klima-Sensor (Ruuvi): temp, hum, press, co2, pm25
+  BMS_DEV_HEATER = 8,   // Dieselheizung: ht_*, temp = Innenraum, volt = Versorgung
+  BMS_DEV_FRIDGE = 9    // Kuehlbox: fr_*, volt = Versorgung, soc = Akku %
 };
 BmsDev bms_dev_of(BmsModel m);
 // Abgleich/Erweiterung nach patman15/aiobmsble (Apache-2.0): Daly-Varianten und -Erkennung, JK-Aufbau nach
@@ -178,6 +197,14 @@ struct BmsInfo {
   // 4 Kraftstoff (-1 unbekannt), Modus 1..3 verschluesselt / 4 offen (0 unbekannt)
   float tank_l = NAN, tank_cap_l = NAN;
   int tank_kind = -1, sm_mode = 0;
+  // BTHome: Zustaende als Text ("Tür offen", "Bewegung", "Taster: kurz" …), "" = keine
+  std::string note;
+  // Dieselheizung: an -1/0/1, Schritt (0 bereit, 1 Selbsttest, 2 Zuendung, 3 laeuft, 4 kuehlt ab, 6 lueftet),
+  // Art (1 Stufe, 2 Temperatur), Stufe 1..10, Soll-°C, Fehlercode (0 = keiner), Brennkammer °C, CO ppm (-1)
+  int ht_on = -1, ht_step = -1, ht_mode = -1, ht_level = -1, ht_set = -1, ht_err = 0, ht_co = -1;
+  float ht_case = NAN;
+  // Kuehlbox: an -1/0/1, Eco -1/0/1, Zonen 0..2, Soll/Ist je Zone in °C (-128 = keiner), waehlbarer Bereich
+  int fr_on = -1, fr_eco = -1, fr_zones = 0, fr_set[2] = {-128, -128}, fr_cur[2] = {-128, -128}, fr_min = -20, fr_max = 20;
 };
 
 struct BmsFound {
@@ -229,6 +256,10 @@ void bms_rename(const std::string &mac, const std::string &name);
 void bms_set_pin(const std::string &mac, const std::string &pin);   // Kopplungs-PIN (nur Ziffern, "" = keine)
 std::vector<std::string> bms_log();                   // letzte Meldungen (Fehlersuche ueber die Weboberflaeche)
 bool bms_set_output(const std::string &mac, bool ac, bool on);   // Power Station: AC- bzw. DC-Ausgang schalten
+// Dieselheizung: what 0 = ein/aus (value 1/0), 1 = Stufe (1..10), 2 = Solltemperatur (°C)
+bool bms_heater_cmd(const std::string &mac, int what, int value);
+// Kuehlbox: what 0 = ein/aus (value 1/0), 1 = Soll Zone 1 (°C), 2 = Soll Zone 2 (°C)
+bool bms_fridge_cmd(const std::string &mac, int what, int value);
 // EcoFlow: Benutzer-ID des Kontos (fuer die Anmeldung an der Power Station). Anmeldung holt sie per HTTPS.
 bool bms_ef_uid_set();
 std::string bms_ef_uid_hint();                        // "…1234" (nur die letzten Stellen)
@@ -247,4 +278,6 @@ inline bool bms_has_devices() { return false; }
 inline std::vector<BmsInfo> bms_list() { return {}; }
 inline bool bms_get(const std::string &, BmsInfo &) { return false; }
 inline bool bms_set_output(const std::string &, bool, bool) { return false; }
+inline bool bms_heater_cmd(const std::string &, int, int) { return false; }
+inline bool bms_fridge_cmd(const std::string &, int, int) { return false; }
 #endif

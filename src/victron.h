@@ -24,6 +24,8 @@ enum VicKind : uint8_t {
   VIC_LITHIUM = 10,  // Smart Lithium Akku (Datensatz 0x05)
   VIC_TANK = 11,     // Tankmodul (bms.cpp: SuperSense SSBT, bis 4 Kanaele) – Beta
   VIC_CLIMATE = 12,  // Klima-Sensor (bms.cpp: Ruuvi) – Beta
+  VIC_HEATER = 13,   // Dieselheizung (bms.cpp) – Beta
+  VIC_FRIDGE = 14,   // Kompressor-Kuehlbox (bms.cpp) – Beta
 };
 
 struct VictronInfo {
@@ -77,6 +79,11 @@ struct VictronInfo {
   float tank_temp[4] = {NAN, NAN, NAN, NAN};
   // Klima-Sensor (VIC_CLIMATE): aux = Temperatur, bat_v = Batterie des Sensors; NAN/-1 = nicht gemeldet
   float hum = NAN, press = NAN, pm25 = NAN;
+  std::string note;   // Klima-Sensor: Zustaende (BTHome: "Tür offen", "Bewegung" …)
+  // Dieselheizung (aux = Innenraum, bat_v = Versorgung) und Kuehlbox (aux = Ist Zone 1)
+  int ht_on = -1, ht_step = -1, ht_mode = -1, ht_level = -1, ht_set = -1, ht_err = 0;
+  float ht_case = NAN;
+  int fr_on = -1, fr_eco = -1, fr_zones = 0, fr_set[2] = {-128, -128}, fr_cur[2] = {-128, -128}, fr_min = -20, fr_max = 20;
   int co2 = -1;
 };
 

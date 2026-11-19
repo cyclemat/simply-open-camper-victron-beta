@@ -50,6 +50,9 @@ const char *bms_model_text(BmsModel m) {
     case BMS_RUUVI: return "Ruuvi";
     case BMS_SWITCHBOT: return "SwitchBot Meter";
     case BMS_SIMARINE: return "Simarine STRx";
+    case BMS_BTHOME: return "BTHome";
+    case BMS_HEATER: return "Dieselheizung";
+    case BMS_FRIDGE: return "Kühlbox";
     default: return "Akku";
   }
 }
@@ -72,7 +75,10 @@ BmsDev bms_dev_of(BmsModel m) {
     case BMS_SS_TANK:
     case BMS_SIMARINE: return BMS_DEV_TANK;
     case BMS_RUUVI:
-    case BMS_SWITCHBOT: return BMS_DEV_CLIMATE;
+    case BMS_SWITCHBOT:
+    case BMS_BTHOME: return BMS_DEV_CLIMATE;
+    case BMS_HEATER: return BMS_DEV_HEATER;
+    case BMS_FRIDGE: return BMS_DEV_FRIDGE;
     default: return BMS_DEV_BATTERY;
   }
 }
@@ -206,6 +212,20 @@ struct Bat {
   uint32_t sm_meta_ms = 0;
   uint64_t sm_last = 0;
   std::string sm_err;   // Grund, warum es keinen Wert gibt (Status)
+  // BTHome: Zustaende, letzte Paket-ID (Wiederholungen), letzter Zaehler (verschluesselt)
+  std::string bt_note;
+  int bt_pid = -1;
+  uint32_t bt_cnt = 0;
+  // Dieselheizung: Variante (0 unbekannt, 1 Vevor AA55/AA66, 2 ABBA), Werte, gewuenschte Aenderungen (-1 = keine)
+  uint8_t hv = 0;
+  int ht_on = -1, ht_step = -1, ht_mode = -1, ht_level = -1, ht_set = -1, ht_err = 0, ht_co = -1;
+  float ht_case = NAN;
+  int8_t want_pwr = -1;
+  int want_lvl = -1, want_tmp = -1;
+  // Kuehlbox: letzter Statusblock (fuer Set-Befehle), gewuenschte Aenderungen (-128 = keine)
+  std::string fr_blk;
+  int fr_want_set[2] = {-128, -128};
+  bool fr_bound = false;   // Bind einmal bestaetigt (beim ersten Mal Settings-Taste an der Box)
   uint32_t alarms = 0;
   bool chg_on = true, dis_on = true;
   std::string rx;   // Empfangspuffer (Notify)
@@ -228,7 +248,7 @@ struct Bat {
     return model != BMS_SUPERB && model != BMS_UNKNOWN && !adv_only() && !is_anker(model) && !is_ecoflow(model);
   }
   bool adv_only() const {   // nur Werbepakete (Ruuvi, SwitchBot), nie verbinden
-    return model == BMS_RUUVI || model == BMS_SWITCHBOT || model == BMS_SIMARINE;
+    return model == BMS_RUUVI || model == BMS_SWITCHBOT || model == BMS_SIMARINE || model == BMS_BTHOME;
   }
   int8_t daly_x81 = -1;    // Daly: -1 noch unbekannt, 0 Protokoll D2, 1 Protokoll 0x81 (Antwort 0x51)
   int jk_sw = -1;          // JK: Firmware-Hauptversion (ab 11 Aufbau 32S)
@@ -1164,6 +1184,33 @@ static bool ss_connect(Bat &b, NimBLEClient *c) {
   return true;
 }
 
+#if BMS_HEATER_ON
+// Dieselheizung: Vevor/Hcalory FFE0 (FFE1 Notify+Schreiben, manche Notify FFE2), sonst HeaterCC/AirHeater FFF0
+// (Notify FFF1, Schreiben FFF2). Variante steht danach in b.hv (1 Vevor, 2 ABBA).
+static bool heater_connect(Bat &b, NimBLEClient *c) {
+  if (generic_connect(b, c, 0xFFE0, 0xFFE1, 0xFFE1, "Dieselheizung FFE0") ||
+      generic_connect(b, c, 0xFFE0, 0xFFE2, 0xFFE1, "Dieselheizung FFE0/FFE2")) {
+    b.hv = 1;
+    return true;
+  }
+  if (generic_connect(b, c, 0xFFF0, 0xFFF1, 0xFFF2, "Dieselheizung FFF0")) {
+    b.hv = 2;
+    return true;
+  }
+  logf("%s: Dienst FFE0/FFF0 fehlt – andere Heizungs-Variante (Hcalory MVP, Sunster) noch nicht unterstuetzt",
+       b.name.c_str());
+  return false;
+}
+#endif
+#if BMS_FRIDGE_ON
+// Kuehlbox (Alpicool-Protokoll): Dienst 1234, Schreiben 1235, Notify 1236
+static bool fridge_connect(Bat &b, NimBLEClient *c) {
+  if (generic_connect(b, c, 0x1234, 0x1236, 0x1235, "Kühlbox")) return true;
+  logf("%s: Kuehlbox-Dienst 1234 fehlt – anderes Protokoll?", b.name.c_str());
+  return false;
+}
+#endif
+
 // 8 Byte BCD -> 4 Werte (9999 = kein Sensor -> -1); false = Laenge falsch oder keine BCD-Ziffern
 static bool ss_bcd4(const std::string &d, int out[BMS_TANKS]) {
   if (d.size() != 8) return false;
@@ -1306,7 +1353,10 @@ static BmsModel renogy_detect(const std::string &un, uint16_t mid) {
 }
 
 // ---------------------------------------------------------------- Bluetooth-Ablauf (Scan-Task von truma.cpp)
-#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON
+#if BMS_SIMARINE_ON || BMS_BTHOME_ON
+#include <mbedtls/ccm.h>
+#endif
+#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON || BMS_BTHOME_ON
 // Ruuvi (offizielle Doku "Data formats"): Herstellerdaten 99 04 FORMAT …, Werte Big Endian.
 // Format 5 (Tag, 24 Byte): 1-2 °C int16 x 0,005, 3-4 % rF x 0,0025, 5-6 Pa - 50000, 13-14 Batterie (11 Bit, mV - 1600).
 // Format 3 (aeltere Firmware, 14 Byte): 1 % rF x 0,5, 2 °C ganzzahlig (Bit 7 = minus), 3 Hundertstel, 4-5 Pa - 50000,
@@ -1393,7 +1443,7 @@ static bool sbot_parse(const NimBLEAdvertisedDevice *dev, RuuviVals &r, int &bat
   return got || type_ok;
 }
 #endif
-#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON
+#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON || BMS_BTHOME_ON
 // Werte eines eingerichteten Ruuvi uebernehmen (unter Lock). Neue Version nur bei spuerbarer Aenderung, die Sensoren
 // senden etwa jede Sekunde.
 static void ruuvi_take(Bat &b, const RuuviVals &v, int rssi) {
@@ -1425,7 +1475,6 @@ static void ruuvi_take(Bat &b, const RuuviVals &v, int rssi) {
 //   [8..9] Inhalt l (0xFFFF unbekannt), [10] Tankart (0xFF unbekannt).
 // Verschluesselt: AES-128-CCM, 2 Byte, Pruefwert 4 Byte, Nonce 13 Byte = Serie LE16, Start LE16, Folge LE24, Konfig, 5x 0;
 //   Zusatzdaten 1 Byte = Modus.
-#include <mbedtls/ccm.h>
 static const char *SM_ADV_UUID = "ea4a9703-a497-42a7-a177-f5a0b3214a0e";
 static const char *SM_META_UUID = "ea4a96f3-a497-42a7-a177-f5a0b3214a0e";
 static bool sm_key(const std::string &hex, uint8_t key[16]) {
@@ -1516,6 +1565,169 @@ static void sm_take(Bat &b, const std::string &adv, const std::string &meta, int
 }
 #endif
 
+#if BMS_BTHOME_ON
+#if !BMS_SIMARINE_ON
+static bool sm_key(const std::string &hex, uint8_t key[16]) {   // 32 Hex-Zeichen -> 16 Byte
+  if (hex.size() != 32) return false;
+  for (int i = 0; i < 16; i++) {
+    unsigned v;
+    if (sscanf(hex.c_str() + i * 2, "%2x", &v) != 1) return false;
+    key[i] = (uint8_t)v;
+  }
+  return true;
+}
+#endif
+// BTHome v2: Dienstdaten 0xFCD2 = [Geraeteinfo][ID Wert]… (LE). Laenge je ID, 0 = unbekannt (Rest nicht lesbar),
+// 0xFF = Laenge im ersten Byte (Text/Rohdaten). Nach bthome.io bzw. Bluetooth-Devices/bthome-ble (MIT).
+static uint8_t bth_len(uint8_t id) {
+  static const uint8_t L[0x66] = {
+      1, 1, 2, 2, 3, 3, 2, 2, 2, 1, 3, 3, 2, 2, 2, 1,   // 0x00
+      1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,   // 0x10
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,   // 0x20
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 4, 2,   // 0x30 (0x3B Befehl: 2)
+      2, 2, 3, 2, 2, 2, 1, 2, 2, 2, 2, 3, 4, 4, 4, 4,   // 0x40
+      4, 2, 2, 0xFF, 0xFF, 4, 2, 1, 1, 1, 2, 4, 4, 2, 2, 2,   // 0x50
+      1, 2, 4, 4, 1, 1};                                // 0x60
+  if (id < 0x66) return L[id];
+  if (id == 0xF0) return 2;
+  if (id == 0xF1) return 4;
+  if (id == 0xF2) return 3;
+  return 0;
+}
+static int32_t bth_val(const uint8_t *p, int n, bool sign) {
+  uint32_t v = 0;
+  for (int i = n - 1; i >= 0; i--) v = v << 8 | p[i];
+  if (sign && n < 4 && (v & (1u << (n * 8 - 1)))) v |= ~0u << (n * 8);
+  return (int32_t)v;
+}
+// Werte auswerten (Objekte ab p, Laenge n). Liefert false bei unbekannter ID (dann nur bis dorthin gelesen).
+static bool bth_parse(const uint8_t *p, size_t n, RuuviVals &r, int &batt, std::string &note, int &pid) {
+  auto add = [&](const char *t) {
+    if (!note.empty()) note += "  ·  ";
+    note += t;
+  };
+  size_t i = 0;
+  while (i < n) {
+    uint8_t id = p[i++], len = bth_len(id);
+    if (len == 0xFF) {   // Text/Rohdaten: Laenge im naechsten Byte
+      if (i >= n) return false;
+      i += 1 + p[i];
+      continue;
+    }
+    if (!len || i + len > n) return false;
+    const uint8_t *q = p + i;
+    i += len;
+    uint8_t b = q[0];
+    switch (id) {
+      case 0x00: pid = b; break;
+      case 0x01: batt = b; break;
+      case 0x02: r.t = bth_val(q, 2, true) * 0.01f; break;
+      case 0x45: r.t = bth_val(q, 2, true) * 0.1f; break;
+      case 0x57: r.t = (int8_t)b; break;
+      case 0x58: r.t = (int8_t)b * 0.35f; break;
+      case 0x03: r.h = bth_val(q, 2, false) * 0.01f; break;
+      case 0x2E: r.h = b; break;
+      case 0x04: r.p = bth_val(q, 3, false) * 0.01f; break;
+      case 0x0C: r.bat = bth_val(q, 2, false) * 0.001f; break;
+      case 0x4A: r.bat = bth_val(q, 2, false) * 0.1f; break;
+      case 0x0D: r.pm = bth_val(q, 2, false); break;
+      case 0x12: r.co2 = bth_val(q, 2, false); break;
+      case 0x11:   // offen
+      case 0x1A:   // Tuer
+      case 0x1B:   // Garagentor
+      case 0x2D:   // Fenster
+        add(id == 0x2D ? (b ? "Fenster offen" : "Fenster zu") : (b ? "Tür offen" : "Tür zu"));
+        break;
+      case 0x21:
+      case 0x23:
+      case 0x25: add(b ? "Bewegung" : "keine Bewegung"); break;
+      case 0x20: if (b) add("Nässe!"); break;
+      case 0x29: if (b) add("Rauch!"); break;
+      case 0x17: if (b) add("CO!"); break;
+      case 0x1C: if (b) add("Gas!"); break;
+      case 0x15: if (b) add("Batterie schwach"); break;
+      case 0x2B: if (b) add("Manipulation"); break;
+      case 0x2C: if (b) add("Erschütterung"); break;
+      case 0x3A: {   // Taster-Ereignis
+        static const char *EV[] = {"", "Taster: kurz", "Taster: doppelt", "Taster: dreifach", "Taster: lang",
+                                   "Taster: sehr lang", "Taster: lang doppelt", "Taster: lang dreifach"};
+        if (b && b < 8) add(EV[b]);
+        break;
+      }
+      default: break;
+    }
+  }
+  return true;
+}
+// Paket eines eingerichteten BTHome-Geraets uebernehmen (unter Lock)
+static void bth_take(Bat &b, const std::string &sd, int rssi) {
+  if (sd.size() < 2) return;
+  uint8_t info = (uint8_t)sd[0];
+  if ((info >> 5) != 2) {
+    b.sm_err = "Kein BTHome v2";
+    return;
+  }
+  std::string plain;
+  if (info & 1) {   // verschluesselt: [info][Daten…][Zaehler 4][MIC 4]
+    uint8_t key[16];
+    if (!sm_key(b.pin, key)) {
+      b.sm_err = "Verschluesselt – Schluessel (32 Zeichen) als PIN / Passwort eintragen";
+      return;
+    }
+    if (sd.size() < 1 + 8 + 1) return;
+    size_t dn = sd.size() - 9;
+    const uint8_t *cnt = (const uint8_t *)sd.data() + 1 + dn;
+    uint32_t c = cnt[0] | cnt[1] << 8 | cnt[2] << 16 | (uint32_t)cnt[3] << 24;
+    if (b.bt_cnt && c <= b.bt_cnt) return;   // Wiederholung
+    unsigned m[6];
+    if (sscanf(b.mac.c_str(), "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6) return;
+    uint8_t nonce[13] = {(uint8_t)m[0], (uint8_t)m[1], (uint8_t)m[2], (uint8_t)m[3], (uint8_t)m[4], (uint8_t)m[5],
+                         0xD2, 0xFC, info, cnt[0], cnt[1], cnt[2], cnt[3]};
+    plain.resize(dn);
+    mbedtls_ccm_context ctx;
+    mbedtls_ccm_init(&ctx);
+    int rc = mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 128);
+    if (!rc) rc = mbedtls_ccm_auth_decrypt(&ctx, dn, nonce, 13, nullptr, 0, (const uint8_t *)sd.data() + 1,
+                                           (uint8_t *)&plain[0], cnt + 4, 4);
+    mbedtls_ccm_free(&ctx);
+    if (rc) {
+      b.sm_err = "Schluessel passt nicht";
+      return;
+    }
+    b.bt_cnt = c;
+  } else {
+    if (!b.pin.empty()) {   // Schluessel eingetragen, Paket aber offen: nicht annehmen
+      b.sm_err = "Unverschluesselt, obwohl ein Schluessel eingetragen ist – Paket verworfen";
+      return;
+    }
+    plain = sd.substr(1);
+  }
+  RuuviVals v;
+  int batt = -1, pid = -1;
+  std::string note;
+  bth_parse((const uint8_t *)plain.data(), plain.size(), v, batt, note, pid);
+  if (pid >= 0 && pid == b.bt_pid) {   // gleiches Paket nochmal
+    b.rssi = rssi;
+    b.last_ms = millis();
+    return;
+  }
+  b.bt_pid = pid;
+  // Nur gemeldete Werte ueberschreiben (Geraete senden je Paket oft nur einen Teil)
+  if (!isfinite(v.t)) v.t = b.temp;
+  if (!isfinite(v.h)) v.h = b.hum;
+  if (!isfinite(v.p)) v.p = b.press;
+  if (!isfinite(v.bat)) v.bat = b.volt;
+  if (!isfinite(v.pm)) v.pm = b.pm25;
+  if (v.co2 < 0) v.co2 = b.co2;
+  bool ch = note != b.bt_note || (batt >= 0 && batt != b.soc);
+  if (!note.empty()) b.bt_note = note;
+  if (batt >= 0) b.soc = batt;
+  b.sm_err.clear();
+  if (ch) s_ver++;
+  ruuvi_take(b, v, rssi);
+}
+#endif
+
 bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   bool ruuvi = false;
 #if BMS_RUUVI_ON
@@ -1579,6 +1791,26 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
     }
   }
 #endif
+  bool bth = false;
+#if BMS_BTHOME_ON
+  if (!ruuvi && !sbot && !strx && dev->haveServiceData()) {
+    std::string sd = dev->getServiceData(NimBLEUUID((uint16_t)0xFCD2));
+    if (!sd.empty()) {
+      std::string mac = lower(dev->getAddress().toString());
+      {
+        Lock l;
+        Bat *b = find_mac(mac);
+        if (b) {
+          if (b->model == BMS_BTHOME && !b->remove) bth_take(*b, sd, dev->getRSSI());
+          return true;
+        }
+      }
+      if (!s_disc_until) return true;
+      bth = ((uint8_t)sd[0] >> 5) == 2;
+      if (!bth) return true;
+    }
+  }
+#endif
   if (!s_disc_until) return false;
   bool svc = dev->isAdvertisingService(NimBLEUUID(SB_SERVICE)) || dev->isAdvertisingService(NimBLEUUID(SB2_SERVICE));
   if (!svc && dev->haveManufacturerData()) {   // Epsilon V2: Hersteller-ID 0x50BE
@@ -1598,7 +1830,8 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   if (ruuvi) model = BMS_RUUVI;
   if (sbot) model = BMS_SWITCHBOT;
   if (strx) model = BMS_SIMARINE;
-  if (!svc && !hint && !ss && !ruuvi && !sbot && !strx) {
+  if (bth) model = BMS_BTHOME;
+  if (!svc && !hint && !ss && !ruuvi && !sbot && !strx && !bth) {
     model = pq_detect(name, dev->haveManufacturerData() ? dev->getManufacturerData() : std::string(), &prod);
     std::string un = name;
     for (auto &ch : un) ch = toupper((unsigned char)ch);
@@ -1621,6 +1854,20 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
     if (model == BMS_UNKNOWN && mid == 0xB5B5) model = ecoflow_detect(dev->getManufacturerData(), ef_sn, ef_enc);
 #endif
     if (model == BMS_UNKNOWN && (un.rfind("ECO-WORTHY", 0) == 0 || un.rfind("DCHOUSE", 0) == 0)) model = BMS_ECOWORTHY;
+#if BMS_HEATER_ON
+    // Dieselheizung (wie homeassistant-diesel-heater): Namen bzw. Hersteller-ID 0xFF0E
+    if (model == BMS_UNKNOWN &&
+        (un.rfind("BYD-", 0) == 0 || un.rfind("HC-", 0) == 0 || un.rfind("BAC-", 0) == 0 || un.rfind("CRONUS", 0) == 0 ||
+         un.rfind("HCALORY", 0) == 0 || un.rfind("BOYGU", 0) == 0 || un == "AIR HEATER" ||
+         (un.rfind("HEATER", 0) == 0 && un.size() > 6 && isdigit((unsigned char)un[6])) || mid == 0xFF0E))
+      model = BMS_HEATER;
+#endif
+#if BMS_FRIDGE_ON
+    // Kompressor-Kuehlbox (Alpicool-Protokoll): "WT-", "A1-", "AK1-", "AK2-", "AK3-"
+    if (model == BMS_UNKNOWN && (un.rfind("WT-", 0) == 0 || un.rfind("A1-", 0) == 0 || un.rfind("AK1-", 0) == 0 ||
+                                 un.rfind("AK2-", 0) == 0 || un.rfind("AK3-", 0) == 0))
+      model = BMS_FRIDGE;
+#endif
     if (model == BMS_UNKNOWN && un.rfind("JK", 0) == 0) model = BMS_JK;   // "JK-B2A24S…", "JK_…"
     // ANT: "ANT-BLE24…", "ANT-BLE3…" (Zeichen 4 beliebig)
     if (model == BMS_UNKNOWN && un.size() >= 8 && un.rfind("ANT", 0) == 0 && un.compare(4, 3, "BLE") == 0) model = BMS_ANT;
@@ -1712,6 +1959,9 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
       case BMS_RUUVI: on = BMS_RUUVI_ON; break;
       case BMS_SWITCHBOT: on = BMS_SWITCHBOT_ON; break;
       case BMS_SIMARINE: on = BMS_SIMARINE_ON; break;
+      case BMS_HEATER: on = BMS_HEATER_ON; break;
+      case BMS_FRIDGE: on = BMS_FRIDGE_ON; break;
+      case BMS_BTHOME: on = BMS_BTHOME_ON; break;
       default: break;
     }
     if (!on) return false;
@@ -1966,6 +2216,12 @@ void bms_connect_now() {
 #if BMS_SUPERSENSE_ON
     case BMS_SS_TANK: good = ss_connect(copy, c); break;
 #endif
+#if BMS_HEATER_ON
+    case BMS_HEATER: good = heater_connect(copy, c); break;
+#endif
+#if BMS_FRIDGE_ON
+    case BMS_FRIDGE: good = fridge_connect(copy, c); break;
+#endif
     default: logf("%s: Akku-Typ %s ist in dieser Firmware nicht eingebaut", copy.name.c_str(), bms_model_text(copy.model));
   }
   NimBLEClient *dead = nullptr;
@@ -1981,6 +2237,7 @@ void bms_connect_now() {
       b->wr = copy.wr;
       b->next_poll = copy.next_poll;
       b->wr_resp = copy.wr_resp;
+      if (copy.hv) b->hv = copy.hv;
       if (!good || !c->isConnected()) {
         dead = detach(*b);
         b->next_try = millis() + RETRY_MS;
@@ -2078,6 +2335,369 @@ bool bms_want_poll() {
     if (b.connected && b.wr && (int32_t)(now - b.next_poll) >= 0) return true;
   return false;
 }
+
+#if BMS_HEATER_ON
+// ---- Dieselheizung (Protokoll: docs/protokolle/dieselheizung_ble.md; nach Spettacolo83/diesel-heater-ble, MIT)
+// Sicherheit: nur Ein/Aus, Stufe, Solltemperatur; >= 600 ms zwischen Befehlen; bei Fehlercode nur noch "aus".
+namespace {
+struct HeatVals {
+  int on = -1, step = -1, mode = -1, level = -1, set = -1, err = 0, co = -1;
+  float volt = NAN, cab = NAN, kase = NAN;
+};
+}  // namespace
+static int16_t s16(int v) { return (int16_t)(uint16_t)v; }
+// Rahmen auswerten; false = kein bekannter Rahmen
+static bool heat_parse(const std::string &rx, HeatVals &h) {
+  std::string d = rx;
+  size_t n = d.size();
+  if (n < 17) return false;
+  auto u = [&](int i) -> int { return (uint8_t)d[i]; };
+  uint16_t head = u(0) << 8 | u(1);
+  if (head == 0xABBA && n >= 21) {   // HeaterCC/AirHeater
+    int st = u(4), mode = u(5);
+    h.on = st == 0x01 ? 1 : 0;
+    h.step = st == 0x01 ? 3 : st == 0x02 ? 4 : st == 0x04 ? 6 : 0;
+    if (mode == 0xFF) {
+      h.err = u(6);
+    } else {
+      h.mode = mode == 0 ? 1 : 2;
+      if (h.mode == 1) h.level = u(6);
+      else h.set = u(6);
+    }
+    h.volt = u(9);
+    h.cab = u(11) - (u(10) == 1 ? 22 : 30);
+    h.kase = u(12) << 8 | u(13);
+    return true;
+  }
+  bool enc = false;
+  if (n >= 48 && head != 0xAA55 && head != 0xAA66) {   // verschluesselt: 6 x 8 Byte XOR "password"
+    static const uint8_t K[8] = {'p', 'a', 's', 's', 'w', 'o', 'r', 'd'};
+    for (int i = 0; i < 48; i++) d[i] ^= K[i % 8];
+    head = u(0) << 8 | u(1);
+    enc = true;
+    n = 48;
+  }
+  if (head != 0xAA55 && head != 0xAA66) return false;
+  h.on = u(3);
+  h.step = u(5);
+  h.mode = u(8);
+  if (!enc && head == 0xAA55) {
+    h.err = u(4);
+    if (h.mode == 1) h.level = u(9);
+    else h.level = u(10) + 1;
+    if (h.mode == 2) h.set = u(9);
+    h.volt = (u(12) << 8 | u(11)) / 10.0f;
+    h.kase = s16(u(14) << 8 | u(13));
+    h.cab = s16(u(16) << 8 | u(15));
+  } else if (!enc) {   // AA66
+    h.err = u(4);
+    if (h.mode == 1) h.level = u(9);
+    if (h.mode == 2) h.set = u(9);
+    h.volt = (u(12) << 8 | u(11)) / 10.0f;
+    int kr = u(14) << 8 | u(13);
+    h.kase = kr > 350 ? kr / 10.0f : kr;
+    h.cab = u(15);
+  } else {   // verschluesselt (AA55 bzw. AA66)
+    h.err = head == 0xAA66 ? u(35) : u(4);
+    h.level = u(10);
+    h.set = u(9);
+    if (head == 0xAA66 && u(27) == 1) h.set = (int)lroundf((h.set - 32) * 5 / 9.0f);
+    h.volt = (u(11) << 8 | u(12)) / 10.0f;
+    h.kase = s16(u(13) << 8 | u(14));
+    h.cab = s16(u(32) << 8 | u(33)) / 10.0f;
+    if (u(37) == 1) h.co = u(38) << 8 | u(39);
+  }
+  if (h.level < 1 || h.level > 10) h.level = -1;
+  if (h.set < 8 || h.set > 36) h.set = -1;
+  return true;
+}
+// Schreiben, dann bis 2,5 s auf einen vollstaendigen Rahmen warten
+static bool heat_ask(const std::string &mac, NimBLERemoteCharacteristic *wr, const uint8_t *req, HeatVals &h) {
+  bool resp;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    b->rx.clear();
+    resp = b->wr_resp;
+  }
+  if (!pq_write(wr, req, 8, resp)) return false;
+  uint32_t t0 = millis(), last = 0;
+  size_t seen = 0;
+  while (millis() - t0 < 2500) {
+    delay(30);
+    std::string rx;
+    {
+      Lock l;
+      Bat *b = find_mac(mac);
+      if (!b) return false;
+      rx = b->rx;
+    }
+    if (rx.size() != seen) {
+      seen = rx.size();
+      last = millis();
+    } else if (seen >= 17 && millis() - last > 150) {   // Rahmen komplett (kurz nichts mehr gekommen)
+      if (heat_parse(rx, h)) return true;
+      pq_note(req, 8, true, rx);
+      return false;
+    }
+  }
+  Lock l;
+  Bat *b = find_mac(mac);
+  pq_note(req, 8, true, b ? b->rx : std::string());
+  return false;
+}
+static bool heater_poll(const std::string &mac, NimBLERemoteCharacteristic *wr) {
+  uint8_t hv;
+  int pk = 1234, w_pwr, w_lvl, w_tmp;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    hv = b->hv;
+    int p = atoi(b->pin.c_str());   // Passkey der App (ab Werk 1234) im Feld PIN / Passwort
+    if (p > 0 && p <= 9999) pk = p;
+    w_pwr = b->want_pwr;
+    w_lvl = b->want_lvl;
+    w_tmp = b->want_tmp;
+  }
+  auto vev = [&](uint8_t cmd, uint16_t arg, uint8_t *p) {
+    p[0] = 0xAA; p[1] = 0x55; p[2] = pk / 100; p[3] = pk % 100; p[4] = cmd; p[5] = arg & 0xFF; p[6] = arg >> 8;
+    p[7] = (p[2] + p[3] + p[4] + p[5] + p[6]) & 0xFF;
+  };
+  auto abba = [&](uint8_t c, uint8_t d1, uint8_t *p) {
+    p[0] = 0xBA; p[1] = 0xAB; p[2] = 0x04; p[3] = c; p[4] = d1; p[5] = 0; p[6] = 0;
+    p[7] = (p[0] + p[1] + p[2] + p[3] + p[4]) & 0xFF;
+  };
+  uint8_t q[8];
+  auto status = [&](HeatVals &h) {
+    if (hv == 2) abba(0xCC, 0, q);
+    else vev(1, 0, q);
+    return heat_ask(mac, wr, q, h);
+  };
+  HeatVals h;
+  if (!status(h)) return false;
+  bool sent = false;
+  auto send = [&](const uint8_t *p) {   // Befehl, dann Pause (Heizung nicht ueberfluten)
+    bool resp;
+    {
+      Lock l;
+      Bat *b = find_mac(mac);
+      resp = b && b->wr_resp;
+    }
+    pq_write(wr, p, 8, resp);
+    sent = true;
+    delay(700);
+  };
+  if (w_pwr >= 0 && w_pwr != h.on && (h.err == 0 || w_pwr == 0)) {   // bei Fehler nur noch ausschalten
+    if (hv == 2) abba(0xBB, 0xA1, q);   // HeaterCC: Umschalter – nur senden, wenn er wirklich wechseln soll
+    else vev(3, w_pwr, q);
+    send(q);
+    logf("Dieselheizung: %s", w_pwr ? "einschalten" : "ausschalten");
+  }
+  if (h.err == 0 && w_lvl >= 1 && w_lvl <= 10 && w_lvl != h.level) {
+    if (hv == 2) {   // Stufe nur schrittweise
+      if (h.mode != 1) { abba(0xBB, 0xAD, q); send(q); }
+      int cur = h.level > 0 ? h.level : w_lvl, steps = 0;
+      while (cur != w_lvl && steps++ < 9) {
+        abba(0xBB, w_lvl > cur ? 0xA2 : 0xA3, q);
+        send(q);
+        cur += w_lvl > cur ? 1 : -1;
+      }
+    } else {
+      if (h.mode != 1) { vev(2, 1, q); send(q); }
+      vev(4, w_lvl, q);
+      send(q);
+    }
+  }
+  if (h.err == 0 && w_tmp >= 8 && w_tmp <= 36 && w_tmp != h.set) {
+    if (hv == 2) {
+      if (h.mode != 2) { abba(0xBB, 0xAC, q); send(q); }
+      abba(0xDB, w_tmp, q);
+      send(q);
+    } else {
+      if (h.mode != 2) { vev(2, 2, q); send(q); }
+      vev(4, w_tmp, q);
+      send(q);
+    }
+  }
+  if (sent) status(h);
+  Lock l;
+  Bat *b = find_mac(mac);
+  if (!b) return false;
+  if (b->want_pwr == w_pwr) b->want_pwr = -1;
+  if (b->want_lvl == w_lvl) b->want_lvl = -1;
+  if (b->want_tmp == w_tmp) b->want_tmp = -1;
+  if (!b->has || h.err != b->ht_err) logf("%s: %s, Fehler %d, %.1f V, innen %.0f °C", b->name.c_str(), h.on ? "an" : "aus", h.err, h.volt, h.cab);
+  b->ht_on = h.on;
+  b->ht_step = h.step;
+  if (h.mode >= 0) b->ht_mode = h.mode;
+  if (h.level > 0) b->ht_level = h.level;
+  if (h.set > 0) b->ht_set = h.set;
+  b->ht_err = h.err;
+  b->ht_co = h.co;
+  b->ht_case = h.kase;
+  b->temp = h.cab;
+  b->volt = h.volt;
+  return true;
+}
+#endif
+
+#if BMS_FRIDGE_ON
+// ---- Kuehlbox (Protokoll: docs/protokolle/kuehlbox_ble.md; nach BrassMonkeyFridgeMonitor/bodega-ble, MIT)
+// Rahmen FE FE LEN DATA… SUM16 (BE), SUM = Summe aller Bytes davor (manche Boxen: doppelte Summe)
+static std::string fr_pkt(const uint8_t *data, size_t n) {
+  std::string p = "\xFE\xFE";
+  p += (char)(n + 2);
+  p.append((const char *)data, n);
+  unsigned s = 0;
+  for (unsigned char ch : p) s += ch;
+  p += (char)(s >> 8 & 0xFF);
+  p += (char)(s & 0xFF);
+  return p;
+}
+static bool fr_frame(const std::string &rx, std::string &out) {   // Daten nach LEN ohne Summe
+  for (size_t i = 0; i + 5 <= rx.size(); i++) {
+    if ((uint8_t)rx[i] != 0xFE || (uint8_t)rx[i + 1] != 0xFE) continue;
+    size_t len = (uint8_t)rx[i + 2];
+    if (i + 3 + len > rx.size() || len < 3) return false;
+    unsigned s = 0;
+    for (size_t k = i; k < i + 1 + len; k++) s += (uint8_t)rx[k];
+    unsigned got = (uint8_t)rx[i + 1 + len] << 8 | (uint8_t)rx[i + 2 + len];
+    if (got != (s & 0xFFFF) && got != ((s * 2) & 0xFFFF)) continue;
+    out = rx.substr(i + 3, len - 2);
+    return true;
+  }
+  return false;
+}
+static bool fr_ask(const std::string &mac, NimBLERemoteCharacteristic *wr, const std::string &pkt, uint8_t cmd,
+                   std::string &out, uint32_t ms = 2500) {
+  bool resp;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    b->rx.clear();
+    resp = b->wr_resp;
+  }
+  if (!pq_write(wr, (const uint8_t *)pkt.data(), pkt.size(), resp)) return false;
+  uint32_t t0 = millis();
+  while (millis() - t0 < ms) {
+    delay(30);
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    std::string f;
+    if (fr_frame(b->rx, f) && !f.empty() && (uint8_t)f[0] == cmd) {
+      out = f.substr(1);
+      return true;
+    }
+  }
+  Lock l;
+  Bat *b = find_mac(mac);
+  pq_note((const uint8_t *)pkt.data(), pkt.size(), true, b ? b->rx : std::string());
+  return false;
+}
+// Zweite Zone vorhanden? (IceCube/Plug-in Festivals: rechts -128 = keine)
+static bool fr_two(const std::string &d) {
+  return d.size() >= 27 && (int8_t)d[18] != -128 && (int8_t)d[26] != -128;
+}
+static bool fridge_poll(const std::string &mac, NimBLERemoteCharacteristic *wr) {
+  static const uint8_t BIND[1] = {0x00}, QUERY[1] = {0x01};
+  std::string d;
+  bool bound;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    bound = b->fr_bound;
+  }
+  // Erst abfragen; nur wenn das nicht klappt und noch nie gebunden: Bind (App: bis 15 s, Settings-Taste an der Box)
+  bool got = fr_ask(mac, wr, fr_pkt(QUERY, 1), 0x01, d) && d.size() >= 18;
+  if (!got && !bound) {
+    {
+      Lock l;
+      if (Bat *b = find_mac(mac)) b->status = "Bitte an der Kühlbox die Settings-Taste drücken …";
+      s_ver++;
+    }
+    if (fr_ask(mac, wr, fr_pkt(BIND, 1), 0x00, d, 15000) && !d.empty() && (uint8_t)d[0] > 0)
+      logf("Kuehlbox: gekoppelt (Bind %u)", (uint8_t)d[0]);
+    got = fr_ask(mac, wr, fr_pkt(QUERY, 1), 0x01, d) && d.size() >= 18;
+  }
+  if (!got) return false;
+  {   // Abfrage klappt: Bind nicht mehr noetig
+    Lock l;
+    if (Bat *b = find_mac(mac)) b->fr_bound = true;
+  }
+  int w_pwr, w_set[2];
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    w_pwr = b->want_pwr;
+    w_set[0] = b->fr_want_set[0];
+    w_set[1] = b->fr_want_set[1];
+  }
+  bool fahr = (uint8_t)d[9] == 1;
+  auto toC = [&](int8_t v) { return fahr ? (int)lroundf((v - 32) * 5 / 9.0f) : (int)v; };
+  auto fromC = [&](int c) { return (int8_t)(fahr ? lroundf(c * 9 / 5.0f + 32) : c); };
+  bool two = fr_two(d);
+  bool sent = false;
+  std::string r;
+  if (w_pwr >= 0 && w_pwr != ((uint8_t)d[1] ? 1 : 0)) {   // Ein/Aus: kompletter Set-Block mit geaendertem Byte 1
+    std::string blk = d.substr(0, 14);
+    blk[1] = w_pwr ? 1 : 0;
+    if (d.size() >= 30) {   // IceCube/Plug-in Festivals (encodeSetOthers): Aufbau nach Modellcode (Byte 28)
+      int8_t model = (int8_t)d[28];
+      if (model != 1) {
+        blk += d.substr(18, 8);   // rechts: Soll, Max, Min, Hysterese, 4 Korrekturen
+        blk += d[29];             // Soll Heizen
+        blk += d[28];             // Modell
+        if (model >= 9) {
+          blk += d[27];                                  // Laufzustand
+          blk += d.size() > 36 ? d[31] : (char)0;        // Schlafmodus
+          blk += d.size() > 36 ? d[33] : (char)0;        // Desinfektion
+          blk += std::string(6, (char)0);
+        } else {
+          blk += (char)0;
+        }
+      }
+    } else if (two) {   // aeltere Boxen (Brass Monkey)
+      blk += d[18];
+      blk += std::string("\x00\x00", 2);
+      blk += d.substr(21, 5);
+      blk += std::string("\x00\x00\x00", 3);
+    }
+    std::string pl = "\x02" + blk;
+    sent |= fr_ask(mac, wr, fr_pkt((const uint8_t *)pl.data(), pl.size()), 0x02, r);
+    delay(500);
+  }
+  for (int z = 0; z < (two ? 2 : 1); z++) {
+    if (w_set[z] == -128) continue;
+    int lo = toC((int8_t)d[6]), hi = toC((int8_t)d[5]);
+    int c = std::max(lo, std::min(hi, w_set[z]));
+    uint8_t pl[2] = {(uint8_t)(z ? 0x06 : 0x05), (uint8_t)fromC(c)};
+    sent |= fr_ask(mac, wr, fr_pkt(pl, 2), pl[0], r);
+    delay(500);
+  }
+  if (sent && fr_ask(mac, wr, fr_pkt(QUERY, 1), 0x01, r) && r.size() >= 18) d = r;
+  Lock l;
+  Bat *b = find_mac(mac);
+  if (!b) return false;
+  if (b->want_pwr == w_pwr) b->want_pwr = -1;
+  for (int z = 0; z < 2; z++)
+    if (b->fr_want_set[z] == w_set[z]) b->fr_want_set[z] = -128;
+  fahr = (uint8_t)d[9] == 1;
+  b->fr_blk = d;
+  b->ht_on = (uint8_t)d[1] ? 1 : 0;   // gemeinsames Feld "an"
+  b->ht_mode = (uint8_t)d[2];         // 0 Max, 1 Eco
+  b->soc = (uint8_t)d[15] <= 100 ? (uint8_t)d[15] : -1;   // 0x7F = keine Angabe
+  b->volt = (uint8_t)d[17] <= 9 ? (uint8_t)d[16] + (uint8_t)d[17] / 10.0f : NAN;
+  b->temp = toC((int8_t)d[14]);
+  if (!b->has) logf("%s: %s, Soll %d °C, Ist %d °C, %.1f V", b->name.c_str(), d[1] ? "an" : "aus", toC((int8_t)d[4]), toC((int8_t)d[14]), b->volt);
+  return true;
+}
+#endif
 
 void bms_poll_now() {
   std::string mac;
@@ -2915,6 +3535,14 @@ void bms_poll_now() {
       }
     }
 #endif
+#if BMS_HEATER_ON
+  } else if (model == BMS_HEATER) {
+    ok = heater_poll(mac, wr);
+#endif
+#if BMS_FRIDGE_ON
+  } else if (model == BMS_FRIDGE) {
+    ok = fridge_poll(mac, wr);
+#endif
 #if BMS_PQ_ON
   } else if (model == BMS_PQ_ASCII) {
     // ~11014642E00201FD35\r : Messwerte, Akku 01
@@ -2999,6 +3627,14 @@ void bms_poll_now() {
     return;
   }
   b->silent = 0;
+  if (model == BMS_HEATER || model == BMS_FRIDGE) {   // Werte hat heater_poll/fridge_poll schon eingetragen
+    b->has = true;
+    b->last_ms = millis();
+    b->flags = (model == BMS_HEATER ? b->ht_err == 0 : true) ? 0x01 : 0;
+    b->status = "Verbunden";
+    s_ver++;
+    return;
+  }
   if (model == BMS_SS_TANK) {   // Tankmodul: nur Fuellstaende und Temperaturen
     bool first = !b->has;
     for (int k = 0; k < BMS_TANKS; k++) {
@@ -3167,6 +3803,33 @@ static BmsInfo info_of(const Bat &b) {
     }
     i.tank_kind = b.sm_meta && b.sm_kind <= 4 ? b.sm_kind : -1;
     i.sm_mode = b.sm_meta ? b.sm_mode : 0;
+  }
+  i.note = b.bt_note;
+  if (b.model == BMS_HEATER) {   // gewuenschte Werte sofort zeigen
+    i.ht_on = b.want_pwr >= 0 ? b.want_pwr : b.ht_on;
+    i.ht_step = b.ht_step;
+    i.ht_mode = b.want_lvl > 0 ? 1 : b.want_tmp > 0 ? 2 : b.ht_mode;
+    i.ht_level = b.want_lvl > 0 ? b.want_lvl : b.ht_level;
+    i.ht_set = b.want_tmp > 0 ? b.want_tmp : b.ht_set;
+    i.ht_err = b.ht_err;
+    i.ht_co = b.ht_co;
+    i.ht_case = b.ht_case;
+  }
+  if (b.model == BMS_FRIDGE && b.fr_blk.size() >= 18) {
+    const std::string &d = b.fr_blk;
+    bool fahr = (uint8_t)d[9] == 1;
+    auto toC = [&](int8_t v) { return fahr ? (int)lroundf((v - 32) * 5 / 9.0f) : (int)v; };
+    i.fr_on = b.want_pwr >= 0 ? b.want_pwr : ((uint8_t)d[1] ? 1 : 0);
+    i.fr_eco = (uint8_t)d[2];
+    i.fr_zones = fr_two(d) ? 2 : 1;
+    i.fr_set[0] = b.fr_want_set[0] != -128 ? b.fr_want_set[0] : toC((int8_t)d[4]);
+    i.fr_cur[0] = toC((int8_t)d[14]);
+    if (i.fr_zones == 2) {
+      i.fr_set[1] = b.fr_want_set[1] != -128 ? b.fr_want_set[1] : toC((int8_t)d[18]);
+      i.fr_cur[1] = toC((int8_t)d[26]);
+    }
+    i.fr_min = toC((int8_t)d[6]);
+    i.fr_max = toC((int8_t)d[5]);
   }
   if (b.adv_only()) {   // nur Werbepakete: "verbunden" = kuerzlich gehoert
     i.connected = b.last_ms && millis() - b.last_ms < 60000;
@@ -3342,6 +4005,38 @@ bool bms_set_output(const std::string &mac, bool ac, bool on) {
   return true;
 }
 
+// Dieselheizung bzw. Kuehlbox bedienen: Wunsch merken, gleich verbinden (wie bms_set_output)
+static bool want_now(Bat *b) {
+  uint32_t now = millis();
+  if (b->connected) b->next_poll = now;
+  else b->next_try = now;
+  s_ver++;
+  return true;
+}
+bool bms_heater_cmd(const std::string &mac, int what, int value) {
+  if (!s_mtx) return false;
+  Lock l;
+  Bat *b = find_mac(lower(mac));
+  if (!b || b->model != BMS_HEATER) return false;
+  if (what == 0) b->want_pwr = value ? 1 : 0;
+  else if (what == 1 && value >= 1 && value <= 10) b->want_lvl = value, b->want_tmp = -1;
+  else if (what == 2 && value >= 8 && value <= 36) b->want_tmp = value, b->want_lvl = -1;
+  else return false;
+  logf("%s: %s %d angefordert", b->name.c_str(), what == 0 ? "Ein/Aus" : what == 1 ? "Stufe" : "Soll-°C", value);
+  return want_now(b);
+}
+bool bms_fridge_cmd(const std::string &mac, int what, int value) {
+  if (!s_mtx) return false;
+  Lock l;
+  Bat *b = find_mac(lower(mac));
+  if (!b || b->model != BMS_FRIDGE) return false;
+  if (what == 0) b->want_pwr = value ? 1 : 0;
+  else if ((what == 1 || what == 2) && value >= -30 && value <= 30) b->fr_want_set[what - 1] = value;
+  else return false;
+  logf("%s: %s %d angefordert", b->name.c_str(), what == 0 ? "Ein/Aus" : "Soll-°C", value);
+  return want_now(b);
+}
+
 void bms_remove(const std::string &mac) {
   Lock l;
   Bat *b = find_mac(lower(mac));
@@ -3358,7 +4053,8 @@ void bms_set_pin(const std::string &mac, const std::string &pin) {
   Lock l;
   Bat *b = find_mac(lower(mac));
   if (!b) return;
-  b->pin = digits.substr(0, b->model == BMS_SIMARINE ? 32 : 6);   // Simarine: Schluessel 32 Hex-Zeichen
+  b->pin = digits.substr(0, b->model == BMS_SIMARINE || b->model == BMS_BTHOME ? 32 : 6);   // Schluessel 32 Hex
+  b->bt_cnt = 0;
   b->sm_seen = false;   // neuer Schluessel: Wiederholungsschutz neu beginnen
   if (!b->pin.empty() && b->model != BMS_JBD) b->auth_fail = true;   // alte Kopplung (ohne PIN) vor dem naechsten Versuch loeschen
   b->cs_pw_bad = false;
@@ -3410,10 +4106,29 @@ std::string bms_value_text(const BmsInfo &b) {
     case BMS_DEV_PSTATION:
       return (b.soc >= 0 ? std::to_string(b.soc) + " %" : std::string("–")) + dot + tr("rein ") + fnum(b.ps_in_w, 0, "W") + dot +
              tr("raus ") + fnum(b.ps_out_w, 0, "W");
-    case BMS_DEV_CLIMATE: {   // "21,5 °C  ·  45 %  ·  650 ppm"
+    case BMS_DEV_CLIMATE: {   // "21,5 °C  ·  45 %  ·  650 ppm" (BTHome ohne Temperatur: nur Zustand)
+      if (!isfinite(b.temp) && !b.note.empty()) return b.note;
       std::string s = fnum(b.temp, 1, "°C");
+      if (!b.note.empty()) s += dot + b.note;
       if (isfinite(b.hum)) s += dot + fnum(b.hum, 0, "%");
       if (b.co2 >= 0) s += dot + std::to_string(b.co2) + " ppm";
+      return s;
+    }
+    case BMS_DEV_HEATER: {   // "an, Stufe 3  ·  21 °C" bzw. Fehler
+      if (b.ht_err) return std::string(tr("Fehler E")) + std::to_string(b.ht_err);
+      std::string s = b.ht_on == 1 ? tr("an") : b.ht_on == 0 ? tr("aus") : "–";
+      if (b.ht_on == 1 && b.ht_mode == 1 && b.ht_level > 0) s += std::string(", ") + tr("Stufe ") + std::to_string(b.ht_level);
+      if (b.ht_on == 1 && b.ht_mode == 2 && b.ht_set > 0) s += ", " + std::to_string(b.ht_set) + " °C";
+      if (isfinite(b.temp)) s += dot + fnum(b.temp, 0, "°C");
+      return s;
+    }
+    case BMS_DEV_FRIDGE: {   // "4 °C (Soll 3 °C)  ·  2 °C / -18 °C"
+      if (b.fr_zones == 0) return "–";
+      std::string s = b.fr_on == 0 ? std::string(tr("aus")) + dot : std::string();
+      for (int z = 0; z < b.fr_zones; z++) {
+        if (z) s += dot;
+        s += std::to_string(b.fr_cur[z]) + " °C (" + tr("Soll ") + std::to_string(b.fr_set[z]) + " °C)";
+      }
       return s;
     }
     case BMS_DEV_TANK: {   // "T1 63 %  ·  T2 12 %"
@@ -3468,8 +4183,34 @@ std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b) {
   std::string temp = fnum(b.temp, 0, "°C");
   std::string today = b.yield_wh >= 0 ? fnum((float)b.yield_wh, 0, "Wh") : "–";
   bool bat = b.dev == BMS_DEV_BATTERY || b.dev == BMS_DEV_SHUNT;
-  if (b.dev == BMS_DEV_CLIMATE) {   // Ruuvi: nur gemeldete Werte
-    add("Temperatur", fnum(b.temp, 1, "°C"));
+  if (b.dev == BMS_DEV_HEATER) {
+    static const char *STEP[] = {"bereit", "Selbsttest", "Zündung", "läuft", "kühlt ab", "", "lüftet"};
+    add("Zustand", b.ht_on == 1 ? "an" : b.ht_on == 0 ? "aus" : "–");
+    if (b.ht_step >= 0 && b.ht_step <= 6 && *STEP[b.ht_step]) add("Betrieb", STEP[b.ht_step]);
+    if (b.ht_mode == 1) add("Stufe", b.ht_level > 0 ? std::to_string(b.ht_level) : "–");
+    if (b.ht_mode == 2) add("Solltemperatur", b.ht_set > 0 ? std::to_string(b.ht_set) + " °C" : "–");
+    add("Innenraum", fnum(b.temp, 0, "°C"));
+    add("Brennkammer", fnum(b.ht_case, 0, "°C"));
+    add("Spannung", fnum(b.volt, 1, "V"));
+    if (b.ht_co >= 0) add("CO", std::to_string(b.ht_co) + " ppm");
+    add("Fehler", b.ht_err ? std::string("E") + std::to_string(b.ht_err) : std::string("keiner"));
+    return r;
+  }
+  if (b.dev == BMS_DEV_FRIDGE) {
+    add("Zustand", b.fr_on == 1 ? "an" : b.fr_on == 0 ? "aus" : "–");
+    for (int z = 0; z < b.fr_zones; z++) {
+      std::string t = b.fr_zones > 1 ? (z ? " rechts" : " links") : "";
+      r.emplace_back("Innen" + t, h ? std::to_string(b.fr_cur[z]) + " °C" : "–");
+      r.emplace_back("Soll" + t, h ? std::to_string(b.fr_set[z]) + " °C" : "–");
+    }
+    if (b.fr_eco >= 0) add("Betrieb", b.fr_eco ? "Eco" : "Max");
+    add("Spannung", fnum(b.volt, 1, "V"));
+    if (b.soc >= 0) add("Akku", std::to_string(b.soc) + " %");
+    return r;
+  }
+  if (b.dev == BMS_DEV_CLIMATE) {   // Ruuvi/SwitchBot/BTHome: nur gemeldete Werte
+    if (!b.note.empty()) add("Zustand", b.note);
+    if (isfinite(b.temp) || b.note.empty()) add("Temperatur", fnum(b.temp, 1, "°C"));
     if (isfinite(b.hum)) add("Luftfeuchte", fnum(b.hum, 0, "%"));
     if (isfinite(b.press)) add("Luftdruck", fnum(b.press, 0, "hPa"));
     if (b.co2 >= 0) add("CO2", std::to_string(b.co2) + " ppm");
