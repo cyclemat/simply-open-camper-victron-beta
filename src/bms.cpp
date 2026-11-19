@@ -202,6 +202,11 @@ struct Bat {
   std::string pin;        // Kopplungs-PIN (Super B Epsilon V2: steht auf dem Akku bzw. in der Anleitung)
   bool pin_need = false;  // Akku hat beim Koppeln eine PIN verlangt
   bool auth_fail = false; // Trennung mit "Authentication Failure" (0x205/0x206): alte Kopplung vor dem naechsten Versuch loeschen
+  // JBD / CS-BATTERIES: Anmeldung in der App (nicht die Bluetooth-Kopplung). pin = Benutzerpasswort (6 Zeichen)
+  int8_t cs_auth = -1;    // -1 noch unbekannt, 0 Akku braucht keine Anmeldung, 1 App-Key angenommen
+  int8_t cs_rev = -1;     // MAC-Reihenfolge, mit der der App-Key angenommen wurde (1 = umgedreht)
+  bool cs_pw_bad = false; // Passwort abgelehnt: nicht immer wieder senden, bis ein neues eingetragen ist
+  bool pw_need = false;   // Akku verlangt ein Passwort (wie in der App)
   // Abgefragte Akkus (Power Quarry, Bulltron) nur kurz verbinden: verbinden, abfragen, trennen. Die Dauer-
   // verbindung riss beim Power Quarry immer nach ~13 s ab ("Grund 520", Funkverbindung verloren).
   bool polled() const { return model != BMS_SUPERB && model != BMS_UNKNOWN && !is_anker(model) && !is_ecoflow(model); }
@@ -829,6 +834,132 @@ static bool pq_ask(const std::string &mac, NimBLERemoteCharacteristic *wr, const
   return false;
 }
 
+#if BMS_JBD_ON
+// CS-BATTERIES Smart Connect / neuere JBD-BMS: Anmeldung FF AA CMD 07 K0..K5 81 SUM.
+// Ki = (MAC[i] ^ Zeichen[i]) + 0x81 (MAC in Schreibreihenfolge), SUM = Summe Byte 2..10 (unteres Byte).
+// CMD 0x21 = App-Key "721747" (fest in der App), 0x18 = Benutzerpasswort (6 Zeichen, vom Besitzer gesetzt).
+// Antwort FF AA CMD LEN STATUS …, Status 0 = angenommen. Nach Auswertung der App 2.3 – am Akku noch ungetestet.
+static bool cs_mac(const std::string &mac, uint8_t m[6]) {
+  unsigned v[6];
+  if (sscanf(mac.c_str(), "%x:%x:%x:%x:%x:%x", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6) return false;
+  for (int i = 0; i < 6; i++) m[i] = (uint8_t)v[i];
+  return true;
+}
+// -2 nicht gesendet, -1 keine Antwort, sonst Status aus der Antwort
+static int cs_auth_send(const std::string &mac, NimBLERemoteCharacteristic *wr, uint8_t cmd, const std::string &pw, bool rev) {
+  uint8_t m[6];
+  if (pw.size() != 6 || !cs_mac(mac, m)) return -2;
+  uint8_t p[12] = {0xFF, 0xAA, cmd, 0x07};
+  for (int i = 0; i < 6; i++) p[4 + i] = (uint8_t)((m[rev ? 5 - i : i] ^ (uint8_t)pw[i]) + 0x81);
+  p[10] = 0x81;
+  uint8_t sum = 0;
+  for (int i = 2; i < 11; i++) sum += p[i];
+  p[11] = sum;
+  bool resp = false;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return -2;
+    b->rx.clear();
+    resp = b->wr_resp;
+  }
+  if (!pq_write(wr, p, sizeof(p), resp)) return -2;
+  uint32_t t0 = millis();
+  while (millis() - t0 < 1500) {
+    delay(20);
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return -2;
+    const uint8_t *r = (const uint8_t *)b->rx.data();
+    size_t n = b->rx.size();
+    for (size_t i = 0; i + 5 <= n; i++)
+      if (r[i] == 0xFF && r[i + 1] == 0xAA && r[i + 2] == cmd) return r[i + 4];
+  }
+  Lock l;
+  Bat *b = find_mac(mac);
+  if (b && !b->rx.empty()) {   // etwas anderes kam zurueck: fuers Protokoll (enthaelt kein Passwort)
+    char t[80];
+    int k = 0;
+    for (size_t i = 0; i < b->rx.size() && i < 16; i++) k += snprintf(t + k, sizeof(t) - k, " %02X", (uint8_t)b->rx[i]);
+    logf("%s: Antwort auf Anmeldung 0x%02X:%s", b->name.c_str(), cmd, t);
+  }
+  return -1;
+}
+static void cs_status(const std::string &mac, const char *st, bool need_pw) {
+  Lock l;
+  Bat *b = find_mac(mac);
+  if (!b) return;
+  b->status = st;
+  if (need_pw) b->pw_need = true;
+  s_ver++;
+}
+// Vor den Abfragen: false = nicht weiter abfragen (Status ist gesetzt)
+static bool jbd_login(const std::string &mac, NimBLERemoteCharacteristic *wr) {
+  int8_t mode, rev;
+  std::string pw, name;
+  bool pw_bad;
+  {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (!b) return false;
+    mode = b->cs_auth;
+    rev = b->cs_rev;
+    pw = b->pin;
+    pw_bad = b->cs_pw_bad;
+    name = b->name;
+  }
+  if (mode == 0) return true;   // gewoehnlicher JBD ohne Anmeldung
+  static const std::string APP_KEY = "721747";
+  int st = cs_auth_send(mac, wr, 0x21, APP_KEY, rev == 1);
+  if (st > 0 && rev < 0 && cs_auth_send(mac, wr, 0x21, APP_KEY, true) == 0) {
+    st = 0;
+    rev = 1;
+  }
+  if (st > 0) {
+    logf("%s: App-Key abgelehnt (Status %d)", name.c_str(), st);
+    cs_status(mac, "Anmeldung abgelehnt – dieser Akku wird noch nicht unterstuetzt", false);
+    return false;
+  }
+  if (st == 0) {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (b && b->cs_auth != 1) {
+      logf("%s: App-Key angenommen%s", name.c_str(), rev == 1 ? " (MAC umgedreht)" : "");
+      b->cs_auth = 1;
+      b->cs_rev = rev == 1 ? 1 : 0;
+    }
+  }
+  if (pw.empty()) return true;
+  if (pw_bad) {
+    cs_status(mac, "Passwort abgelehnt – bitte neu eintragen", true);
+    return false;
+  }
+  if (pw.size() != 6) {
+    cs_status(mac, "Das Passwort muss 6 Zeichen haben", true);
+    return false;
+  }
+  int sp = cs_auth_send(mac, wr, 0x18, pw, rev == 1);
+  if (sp > 0) {
+    logf("%s: Passwort abgelehnt (Status %d)", name.c_str(), sp);
+    {
+      Lock l;
+      if (Bat *b = find_mac(mac)) b->cs_pw_bad = true;
+    }
+    cs_status(mac, "Passwort abgelehnt – bitte neu eintragen", true);
+    return false;
+  }
+  if (sp == 0) {
+    Lock l;
+    Bat *b = find_mac(mac);
+    if (b && b->pw_need) {
+      b->pw_need = false;
+      logf("%s: Passwort angenommen", name.c_str());
+    }
+  }
+  return true;
+}
+#endif
+
 static bool pq_connect(Bat &b, NimBLEClient *c) {
   NimBLERemoteService *ws = c->getService(NimBLEUUID((uint16_t)0xFFE5));
   NimBLERemoteService *ns = c->getService(NimBLEUUID((uint16_t)0xFFE0));
@@ -877,7 +1008,8 @@ static bool generic_connect(Bat &b, NimBLEClient *c, uint16_t svc_id, uint16_t r
 static bool jbd_connect(Bat &b, NimBLEClient *c) {
   if (generic_connect(b, c, 0xFF00, 0xFF01, 0xFF02, "JBD")) return true;
   if (generic_connect(b, c, 0xFFF0, 0xFFF1, 0xFFF2, "JBD, Variante FFF0")) return true;   // z. B. DH04
-  logf("%s: JBD-Dienst FF00/FFF0 fehlt", b.name.c_str());
+  if (generic_connect(b, c, 0xFFE0, 0xFFE1, 0xFFE1, "JBD, Variante FFE0")) return true;   // CS-BATTERIES u. a.
+  logf("%s: JBD-Dienst FF00/FFF0/FFE0 fehlt", b.name.c_str());
   return false;
 }
 
@@ -1125,7 +1257,7 @@ struct IoCapGuard {
 static bool wants_pin_io(const std::string &mac) {
   Lock l;
   Bat *b = find_mac(mac);
-  return b && (!b->pin.empty() || b->pin_need || b->model == BMS_SUPERB);
+  return b && ((!b->pin.empty() && b->model != BMS_JBD) || b->pin_need || b->model == BMS_SUPERB);
 }
 
 // Client vom Akku loesen (unter der Sperre) und erst danach ausserhalb der Sperre trennen/loeschen:
@@ -1446,7 +1578,7 @@ void bms_connect_now() {
   }
   // Akku mit PIN: selbst koppeln und auf das Ergebnis warten, bevor Kanaele abonniert werden. esp-nimble-cpp (P4) meldet
   // eine fehlgeschlagene Kopplung nicht an onAuthenticationComplete – so steht der Fehlercode im Protokoll.
-  if (!copy.pin.empty() && !c->getConnInfo().isEncrypted()) {
+  if (!copy.pin.empty() && (copy.model != BMS_JBD || copy.pin_need) && !c->getConnInfo().isEncrypted()) {
     bool sec = c->secureConnection();
     NimBLEConnInfo ci = c->getConnInfo();
     if (sec)
@@ -1753,7 +1885,8 @@ void bms_poll_now() {
     // Grunddaten: DD A5 03 00 FF FD 77 -> V u16/100, I s16/100 (+ laden), Rest u16/100 Ah, Nenn u16/100 Ah, Zyklen,
     // Datum, Balance(2x2), Schutz u16, Version, SoC, FET (Bit0 Laden, Bit1 Entladen), Zellen, NTC, NTC u16 0,1 K
     static const uint8_t REQ[7] = {0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77};
-    for (int attempt = 0; attempt < 2 && !ok; attempt++) {
+    bool login = jbd_login(mac, wr);
+    for (int attempt = 0; login && attempt < 2 && !ok; attempt++) {
       if (!pq_ask(mac, wr, REQ, 7, 3, 0x03, d, 2000) || d.size() < 23) continue;
       const uint8_t *q = (const uint8_t *)d.data();
       auto be = [&](int o) -> uint16_t { return q[o] << 8 | q[o + 1]; };
@@ -1775,6 +1908,21 @@ void bms_poll_now() {
       if (cnt) temp = sum / cnt;
       ok = true;
     }
+    if (login) {
+      Lock l;
+      Bat *b = find_mac(mac);
+      if (b && ok && b->cs_auth < 0) b->cs_auth = 0;   // antwortet ohne App-Key: keine Anmeldung noetig
+      if (b && !ok && b->cs_auth == 1 && b->pin.empty() && !b->pw_need) {
+        b->pw_need = true;
+        b->status = "Akku verlangt vermutlich ein Passwort (wie in der App) – bitte als PIN eintragen";
+        logf("%s: App-Key angenommen, aber keine Daten – Passwort noetig?", b->name.c_str());
+      }
+    }
+    // Zellspannungen: DD A5 04 00 FF FC 77 -> je Zelle u16 mV
+    static const uint8_t REQ4[7] = {0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77};
+    if (ok && full && pq_ask(mac, wr, REQ4, 7, 3, 0x04, d, 1500))
+      for (size_t k = 0; k + 1 < d.size() && cmv.size() < 32; k += 2)
+        cmv.push_back((uint16_t)((uint8_t)d[k] << 8 | (uint8_t)d[k + 1]));
 #endif
 #if BMS_JK_ON
   } else if (model == BMS_JK) {
@@ -2632,7 +2780,7 @@ static BmsInfo info_of(const Bat &b) {
   i.temp = b.temp;
   i.cycles = b.cycles;
   i.pin_set = !b.pin.empty();
-  i.pin_need = b.pin_need;
+  i.pin_need = b.pin_need || b.pw_need;
   i.capacity_ah = b.cap_ah;
   i.cells_mv = b.cell_mv;
   i.alarms = b.alarms;
@@ -2852,14 +3000,16 @@ void bms_remove(const std::string &mac) {
 }
 
 void bms_set_pin(const std::string &mac, const std::string &pin) {
-  std::string digits;
+  std::string digits;   // Ziffern (Kopplungs-PIN) bzw. Buchstaben/Ziffern (Passwort JBD/CS-BATTERIES)
   for (char ch : pin)
-    if (isdigit((unsigned char)ch)) digits += ch;
+    if (isalnum((unsigned char)ch)) digits += ch;
   Lock l;
   Bat *b = find_mac(lower(mac));
   if (!b) return;
   b->pin = digits.substr(0, 6);
-  if (!b->pin.empty()) b->auth_fail = true;   // alte Kopplung (ohne PIN) vor dem naechsten Versuch loeschen
+  if (!b->pin.empty() && b->model != BMS_JBD) b->auth_fail = true;   // alte Kopplung (ohne PIN) vor dem naechsten Versuch loeschen
+  b->cs_pw_bad = false;
+  b->pw_need = false;
   b->next_try = millis();   // gleich neu versuchen
   save();
   s_ver++;
