@@ -23,6 +23,7 @@ enum VicKind : uint8_t {
   VIC_PROTECT = 9,   // Smart BatteryProtect (Lasttrenner, Datensatz 0x09)
   VIC_LITHIUM = 10,  // Smart Lithium Akku (Datensatz 0x05)
   VIC_TANK = 11,     // Tankmodul (bms.cpp: SuperSense SSBT, bis 4 Kanaele) – Beta
+  VIC_CLIMATE = 12,  // Klima-Sensor (bms.cpp: Ruuvi) – Beta
 };
 
 struct VictronInfo {
@@ -74,6 +75,9 @@ struct VictronInfo {
   // Tankmodul (VIC_TANK): Fuellstand % und Temperatur je Kanal, -1/NAN = kein Sensor
   int tank_pct[4] = {-1, -1, -1, -1};
   float tank_temp[4] = {NAN, NAN, NAN, NAN};
+  // Klima-Sensor (VIC_CLIMATE): aux = Temperatur, bat_v = Batterie des Sensors; NAN/-1 = nicht gemeldet
+  float hum = NAN, press = NAN, pm25 = NAN;
+  int co2 = -1;
 };
 
 // Smart Battery Sense meldet sich als Batteriemonitor (0x02), aber ohne Ladezustand und Strom

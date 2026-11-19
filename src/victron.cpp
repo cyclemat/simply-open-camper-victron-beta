@@ -458,6 +458,17 @@ bool victron_from_bms(const BmsInfo &b, VictronInfo &v) {
       v.ac_w = b.ac_w;
       v.power_w = b.ac_w;
       return true;
+    case BMS_DEV_CLIMATE:   // Ruuvi
+      v.kind = VIC_CLIMATE;
+      v.aux = b.temp;
+      v.aux_mode = 2;
+      v.hum = b.hum;
+      v.press = b.press;
+      v.pm25 = b.pm25;
+      v.co2 = b.co2;
+      v.soc = b.soc >= 0 ? (float)b.soc : NAN;   // Batterie % (SwitchBot)
+      v.power_w = NAN;
+      return true;
     case BMS_DEV_TANK:   // SuperSense-Tankmodul
       v.kind = VIC_TANK;
       for (int k = 0; k < 4; k++) {

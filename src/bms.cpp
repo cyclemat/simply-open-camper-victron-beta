@@ -47,6 +47,8 @@ const char *bms_model_text(BmsModel m) {
     case BMS_JK: return "JK-BMS";
     case BMS_LITIME: return "LiTime";
     case BMS_SS_TANK: return "SuperSense Tankmodul";
+    case BMS_RUUVI: return "Ruuvi";
+    case BMS_SWITCHBOT: return "SwitchBot Meter";
     default: return "Akku";
   }
 }
@@ -67,6 +69,8 @@ BmsDev bms_dev_of(BmsModel m) {
     case BMS_ECOFLOW:
     case BMS_ECOFLOW_PB: return BMS_DEV_PSTATION;
     case BMS_SS_TANK: return BMS_DEV_TANK;
+    case BMS_RUUVI:
+    case BMS_SWITCHBOT: return BMS_DEV_CLIMATE;
     default: return BMS_DEV_BATTERY;
   }
 }
@@ -191,6 +195,8 @@ struct Bat {
   float temp = NAN;
   int cycles = -1;
   std::vector<uint16_t> cell_mv;
+  float hum = NAN, press = NAN, pm25 = NAN;   // Klima-Sensor (Ruuvi)
+  int co2 = -1;
   uint32_t alarms = 0;
   bool chg_on = true, dis_on = true;
   std::string rx;   // Empfangspuffer (Notify)
@@ -209,7 +215,12 @@ struct Bat {
   bool pw_need = false;   // Akku verlangt ein Passwort (wie in der App)
   // Abgefragte Akkus (Power Quarry, Bulltron) nur kurz verbinden: verbinden, abfragen, trennen. Die Dauer-
   // verbindung riss beim Power Quarry immer nach ~13 s ab ("Grund 520", Funkverbindung verloren).
-  bool polled() const { return model != BMS_SUPERB && model != BMS_UNKNOWN && !is_anker(model) && !is_ecoflow(model); }
+  bool polled() const {
+    return model != BMS_SUPERB && model != BMS_UNKNOWN && !adv_only() && !is_anker(model) && !is_ecoflow(model);
+  }
+  bool adv_only() const {   // nur Werbepakete (Ruuvi, SwitchBot), nie verbinden
+    return model == BMS_RUUVI || model == BMS_SWITCHBOT;
+  }
   int8_t daly_x81 = -1;    // Daly: -1 noch unbekannt, 0 Protokoll D2, 1 Protokoll 0x81 (Antwort 0x51)
   int jk_sw = -1;          // JK: Firmware-Hauptversion (ab 11 Aufbau 32S)
   std::string eco_a1, eco_a2;   // Eco-Worthy: letzte Rahmen A1/A2 (je ein Notify)
@@ -1286,7 +1297,160 @@ static BmsModel renogy_detect(const std::string &un, uint16_t mid) {
 }
 
 // ---------------------------------------------------------------- Bluetooth-Ablauf (Scan-Task von truma.cpp)
+#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON
+// Ruuvi (offizielle Doku "Data formats"): Herstellerdaten 99 04 FORMAT …, Werte Big Endian.
+// Format 5 (Tag, 24 Byte): 1-2 °C int16 x 0,005, 3-4 % rF x 0,0025, 5-6 Pa - 50000, 13-14 Batterie (11 Bit, mV - 1600).
+// Format 3 (aeltere Firmware, 14 Byte): 1 % rF x 0,5, 2 °C ganzzahlig (Bit 7 = minus), 3 Hundertstel, 4-5 Pa - 50000,
+// 12-13 Batterie mV. Format 6 (Ruuvi Air, 20 Byte): wie 5 bis Byte 6, 7-8 PM2,5 x 0,1 µg/m³, 9-10 CO2 ppm.
+namespace {   // dateilokal (ODR)
+struct RuuviVals {
+  float t = NAN, h = NAN, p = NAN, bat = NAN, pm = NAN;
+  int co2 = -1;
+};
+}  // namespace
+static bool ruuvi_parse(const std::string &md, RuuviVals &r) {
+  if (md.size() < 3 || (uint8_t)md[0] != 0x99 || (uint8_t)md[1] != 0x04) return false;
+  const uint8_t *d = (const uint8_t *)md.data() + 2;
+  size_t n = md.size() - 2;
+  auto u16 = [&](int o) -> uint16_t { return (uint16_t)(d[o] << 8 | d[o + 1]); };
+  switch (d[0]) {
+    case 5:
+    case 6:
+      if (n < (d[0] == 5 ? 24u : 20u)) return false;
+      if (u16(1) != 0x8000) r.t = (int16_t)u16(1) * 0.005f;
+      if (u16(3) != 0xFFFF) r.h = u16(3) * 0.0025f;
+      if (u16(5) != 0xFFFF) r.p = (u16(5) + 50000) / 100.0f;
+      if (d[0] == 5) {
+        uint16_t mv = u16(13) >> 5;
+        if (mv != 2047) r.bat = (mv + 1600) / 1000.0f;
+      } else {
+        if (u16(7) != 0xFFFF) r.pm = u16(7) * 0.1f;
+        if (u16(9) != 0xFFFF) r.co2 = u16(9);
+      }
+      return true;
+    case 3:
+      if (n < 14) return false;
+      r.h = d[1] * 0.5f;
+      r.t = ((d[2] & 0x7F) + d[3] / 100.0f) * ((d[2] & 0x80) ? -1.0f : 1.0f);
+      r.p = (u16(4) + 50000) / 100.0f;
+      r.bat = u16(12) / 1000.0f;
+      return true;
+    default:
+      return false;
+  }
+}
+#endif
+#if BMS_SWITCHBOT_ON
+// SwitchBot Meter ('T'), Meter Plus ('i'), Outdoor Meter ('w'): Dienstdaten 0xFD3D (aeltere Geraete 0x0D00)
+//   [0] Typ (Bit 0..6), [2] Batterie % (Bit 0..6), [3] Zehntel °C (Bit 0..3), [4] °C (Bit 7: 1 = plus), [5] % rF (Bit 0..6).
+// Neuere Firmware sendet dieselben 3 Byte auch in den Herstellerdaten 0x0969 (nach ID und MAC, Byte 10..12) – die
+// kommen schon beim passiven Lauschen, die Dienstdaten (mit Batterie) erst bei aktiver Suche.
+static bool sbot_type(uint8_t t) {
+  t &= 0x7F;
+  return t == 'T' || t == 'i' || t == 'w';
+}
+static bool sbot_temp(const uint8_t *p, RuuviVals &r) {   // p: 3 Byte wie oben [3..5]
+  if ((p[2] & 0x7F) > 100) return false;
+  float t = (p[1] & 0x7F) + (p[0] & 0x0F) / 10.0f;
+  r.t = (p[1] & 0x80) ? t : -t;
+  r.h = p[2] & 0x7F;
+  return true;
+}
+// type_ok: Dienstdaten mit passendem Typ gesehen (sicherer Treffer fuer die Suche)
+static bool sbot_parse(const NimBLEAdvertisedDevice *dev, RuuviVals &r, int &batt, bool &type_ok) {
+  batt = -1;
+  type_ok = false;
+  bool got = false;
+  for (uint16_t u : {(uint16_t)0xFD3D, (uint16_t)0x0D00}) {
+    std::string sd = dev->getServiceData(NimBLEUUID(u));
+    if (sd.size() >= 6 && sbot_type((uint8_t)sd[0])) {
+      type_ok = true;
+      batt = (uint8_t)sd[2] & 0x7F;
+      got = sbot_temp((const uint8_t *)sd.data() + 3, r);
+      break;
+    }
+  }
+  if (dev->haveManufacturerData()) {
+    std::string md = dev->getManufacturerData();
+    if (md.size() >= 13 && (uint8_t)md[0] == 0x69 && (uint8_t)md[1] == 0x09) {
+      RuuviVals m;
+      if (sbot_temp((const uint8_t *)md.data() + 10, m)) {
+        r.t = m.t;
+        r.h = m.h;
+        got = true;
+      }
+    }
+  }
+  return got || type_ok;
+}
+#endif
+#if BMS_RUUVI_ON || BMS_SWITCHBOT_ON
+// Werte eines eingerichteten Ruuvi uebernehmen (unter Lock). Neue Version nur bei spuerbarer Aenderung, die Sensoren
+// senden etwa jede Sekunde.
+static void ruuvi_take(Bat &b, const RuuviVals &v, int rssi) {
+  auto moved = [](float a, float b, float d) { return isfinite(a) != isfinite(b) || (isfinite(a) && fabsf(a - b) >= d); };
+  bool ch = !b.has || moved(v.t, b.temp, 0.05f) || moved(v.h, b.hum, 0.5f) || moved(v.p, b.press, 0.5f) ||
+            moved(v.pm, b.pm25, 0.5f) || v.co2 != b.co2 || !b.last_ms || millis() - b.last_ms > 60000;
+  if (!b.has) logf("%s: %.1f °C, %.0f %%, %.0f hPa", b.name.c_str(), v.t, v.h, v.p);
+  b.temp = v.t;
+  b.hum = v.h;
+  b.press = v.p;
+  b.volt = v.bat;
+  b.pm25 = v.pm;
+  b.co2 = v.co2;
+  b.rssi = rssi;
+  b.has = true;
+  b.flags = 0x01;
+  b.status = "OK";
+  b.last_ms = millis();
+  if (ch) s_ver++;
+}
+#endif
+
 bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
+  bool ruuvi = false;
+#if BMS_RUUVI_ON
+  if (dev->haveManufacturerData()) {
+    RuuviVals rv;
+    if (ruuvi_parse(dev->getManufacturerData(), rv)) {
+      std::string mac = lower(dev->getAddress().toString());
+      {
+        Lock l;
+        Bat *b = find_mac(mac);
+        if (b) {
+          if (b->model == BMS_RUUVI && !b->remove) ruuvi_take(*b, rv, dev->getRSSI());
+          if (!s_disc_until) return true;
+        }
+      }
+      if (!s_disc_until) return true;
+      ruuvi = true;
+    }
+  }
+#endif
+  bool sbot = false;
+#if BMS_SWITCHBOT_ON
+  if (!ruuvi) {
+    RuuviVals sv;
+    int batt = -1;
+    bool type_ok = false;
+    if (sbot_parse(dev, sv, batt, type_ok)) {
+      std::string mac = lower(dev->getAddress().toString());
+      Lock l;
+      Bat *b = find_mac(mac);
+      if (b && b->model == BMS_SWITCHBOT && !b->remove) {
+        if (isfinite(sv.t)) {
+          sv.bat = NAN;
+          ruuvi_take(*b, sv, dev->getRSSI());
+        }
+        if (batt >= 0) b->soc = batt;
+        return true;
+      }
+      if (b) return false;   // anderes eingerichtetes Geraet
+      if (!s_disc_until) return false;
+      sbot = type_ok;        // fuer die Suche nur mit eindeutigem Typ (Herstellerdaten allein: alle SwitchBot-Geraete)
+    }
+  }
+#endif
   if (!s_disc_until) return false;
   bool svc = dev->isAdvertisingService(NimBLEUUID(SB_SERVICE)) || dev->isAdvertisingService(NimBLEUUID(SB2_SERVICE));
   if (!svc && dev->haveManufacturerData()) {   // Epsilon V2: Hersteller-ID 0x50BE
@@ -1303,7 +1467,9 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   uint8_t ef_enc = 7;
   bool ss = dev->isAdvertisingService(NimBLEUUID(SS_SERVICE)) || lower(name).rfind("ssbt", 0) == 0;
   if (ss) model = BMS_SS_TANK;   // SuperSense Tankmodul (Name "SSBT…" bzw. Dienst)
-  if (!svc && !hint && !ss) {
+  if (ruuvi) model = BMS_RUUVI;
+  if (sbot) model = BMS_SWITCHBOT;
+  if (!svc && !hint && !ss && !ruuvi && !sbot) {
     model = pq_detect(name, dev->haveManufacturerData() ? dev->getManufacturerData() : std::string(), &prod);
     std::string un = name;
     for (auto &ch : un) ch = toupper((unsigned char)ch);
@@ -1414,6 +1580,8 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
       case BMS_ANT: on = BMS_ANT_ON; break;
       case BMS_VATRER: on = BMS_VATRER_ON; break;
       case BMS_SS_TANK: on = BMS_SUPERSENSE_ON; break;
+      case BMS_RUUVI: on = BMS_RUUVI_ON; break;
+      case BMS_SWITCHBOT: on = BMS_SWITCHBOT_ON; break;
       default: break;
     }
     if (!on) return false;
@@ -1451,7 +1619,16 @@ bool bms_on_adv(const NimBLEAdvertisedDevice *dev) {
   return true;
 }
 
-void bms_scan_wanted(bool &, bool &active) {
+void bms_scan_wanted(bool &passive, bool &active) {
+  if (s_mtx) {   // Ruuvi: Werte kommen nur ueber Werbepakete
+    Lock l;
+    uint32_t now = millis();
+    for (auto &b : s_bats) {
+      if (!b.adv_only() || b.remove) continue;
+      passive = true;
+      if (b.model == BMS_SWITCHBOT && (!b.last_ms || now - b.last_ms > 90000)) active = true;
+    }
+  }
   if (!s_disc_until) return;
   if ((int32_t)(millis() - s_disc_until) >= 0) {
     s_disc_until = 0;
@@ -1478,6 +1655,7 @@ bool bms_want_connect() {
       }
     }
     for (auto &b : s_bats) {
+      if (b.adv_only()) continue;   // nur Werbepakete, keine Verbindung
       bool stale = b.connected && (b.last_ms ? now - b.last_ms > STALE_MS : now - b.conn_ms > STALE_MS);
       if (stale) {   // verbunden, aber stumm
         logf("%s: keine Werte mehr – verbinde neu", b.name.c_str());
@@ -1500,7 +1678,7 @@ void bms_connect_now() {
     Lock l;
     uint32_t now = millis();
     for (auto &b : s_bats)
-      if (!b.connected && (int32_t)(now - b.next_try) >= 0) {
+      if (!b.connected && !b.adv_only() && (int32_t)(now - b.next_try) >= 0) {
         mac = b.mac;
         type = b.type;
         b.next_try = now + RETRY_MS;   // bis zum Ergebnis nicht erneut
@@ -2823,6 +3001,14 @@ static BmsInfo info_of(const Bat &b) {
   i.can_ac = i.can_dc =
       (b.model == BMS_BLUETTI && b.rid) || ((b.model == BMS_ALLPOWERS || is_anker(b.model) || is_ecoflow(b.model)) && b.has);
   i.remain_min = b.ex.remain;
+  i.hum = b.hum;
+  i.press = b.press;
+  i.pm25 = b.pm25;
+  i.co2 = b.co2;
+  if (b.adv_only()) {   // nur Werbepakete: "verbunden" = kuerzlich gehoert
+    i.connected = b.last_ms && millis() - b.last_ms < 60000;
+    i.status = !b.has ? "Warte auf Werte …" : i.connected ? "OK" : "Keine Werte – Sensor in Reichweite?";
+  }
   return i;
 }
 
@@ -3057,6 +3243,12 @@ std::string bms_value_text(const BmsInfo &b) {
     case BMS_DEV_PSTATION:
       return (b.soc >= 0 ? std::to_string(b.soc) + " %" : std::string("–")) + dot + tr("rein ") + fnum(b.ps_in_w, 0, "W") + dot +
              tr("raus ") + fnum(b.ps_out_w, 0, "W");
+    case BMS_DEV_CLIMATE: {   // "21,5 °C  ·  45 %  ·  650 ppm"
+      std::string s = fnum(b.temp, 1, "°C");
+      if (isfinite(b.hum)) s += dot + fnum(b.hum, 0, "%");
+      if (b.co2 >= 0) s += dot + std::to_string(b.co2) + " ppm";
+      return s;
+    }
     case BMS_DEV_TANK: {   // "T1 63 %  ·  T2 12 %"
       std::string s;
       for (int k = 0; k < BMS_TANKS; k++)
@@ -3080,6 +3272,16 @@ std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b) {
   std::string temp = fnum(b.temp, 0, "°C");
   std::string today = b.yield_wh >= 0 ? fnum((float)b.yield_wh, 0, "Wh") : "–";
   bool bat = b.dev == BMS_DEV_BATTERY || b.dev == BMS_DEV_SHUNT;
+  if (b.dev == BMS_DEV_CLIMATE) {   // Ruuvi: nur gemeldete Werte
+    add("Temperatur", fnum(b.temp, 1, "°C"));
+    if (isfinite(b.hum)) add("Luftfeuchte", fnum(b.hum, 0, "%"));
+    if (isfinite(b.press)) add("Luftdruck", fnum(b.press, 0, "hPa"));
+    if (b.co2 >= 0) add("CO2", std::to_string(b.co2) + " ppm");
+    if (isfinite(b.pm25)) add("Feinstaub PM2,5", fnum(b.pm25, 1, "µg/m³"));
+    if (isfinite(b.volt)) add("Batterie", fnum(b.volt, 2, "V"));
+    else if (b.soc >= 0) add("Batterie", std::to_string(b.soc) + " %");
+    return r;
+  }
   if (b.dev == BMS_DEV_TANK) {   // je Kanal Fuellstand (Rohwert) und Temperatur
     static const char *T[BMS_TANKS] = {"Tank 1", "Tank 2", "Tank 3", "Tank 4"};
     for (int k = 0; k < BMS_TANKS; k++)

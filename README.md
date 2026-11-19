@@ -42,6 +42,8 @@ MultiPlus-Steuerung (Strombegrenzung/Schalter) und Bluetooth-Ladegeräte. Rückm
 | 🔋 **Cerbo GX** (optional) | Batterie, Solar (Summe und jeder Laderegler einzeln), Netz/Landstrom, Ladegerät, Wechselrichter, DC-DC-Lader (Orion XS/Smart), Lichtmaschinenregler, DC-System – per MQTT im WLAN, der GX wird automatisch gefunden |
 | 🔥 **Truma LevelControl** | Füllstand der Gasflaschen (%, kg, Akku des Sensors) per Bluetooth, bis zu 4 Sensoren |
 | 💧 **SuperSense** *(Beta)* | Tankmodul „SSBT…“ (bis 4 Tanksensoren, auch SuperSense PRO mit Bluetooth) per Bluetooth – **ungetestet**, Rückmeldungen willkommen |
+| 🌡️ **Ruuvi** *(Beta)* | Ruuvi Tag / Ruuvi Air per Bluetooth: Temperatur, Luftfeuchte, Luftdruck (Air: CO₂, Feinstaub) – **ungetestet** |
+| 🌡️ **SwitchBot** *(Beta)* | Thermo-Hygrometer Meter, Meter Plus, Outdoor Meter per Bluetooth: Temperatur, Luftfeuchte, Batterie – **ungetestet** |
 | 🛢️ **Mopeka** | Gasflaschen und Tanks per Bluetooth (Pro Check, Pro Plus, Pro Check Universal/H2O, Pro-200, TD40/TD200, Lippert BottleCheck, Check Standard/XL), bis zu 4 Sensoren |
 | 📶 **Victron Bluetooth** | SmartSolar, SmartShunt/BMV, Orion/DC-DC, Blue Smart/Phoenix Smart Ladegeräte – „Instant Readout“, auch ganz ohne Cerbo |
 | 🔋 **Akkus per Bluetooth** | Super B, Power Quarry/Shentec, Daly/Bulltron, JBD/Xiaoxiang, CS-BATTERIES (Beta), JK-BMS, LiTime/Redodo/PowerQueen, Renogy, Eco-Worthy, ANT, Vatrer: Ladezustand, Spannung, Strom, Temperatur, Zellen – nur lesen |
@@ -185,6 +187,15 @@ Bluetooth startet erst, wenn ein Gerät eingerichtet ist oder gesucht wird.
 
 Das Protokoll ist nachgebaut, nicht vom Hersteller dokumentiert. Bitte meldet, ob die Werte stimmen (Issue).
 
+### Ruuvi und SwitchBot (Beta, ungetestet)
+
+Ruuvi Tag und Ruuvi Air senden ihre Werte offen per Bluetooth – keine Kopplung, kein Passwort, die Ruuvi-App darf
+offen bleiben. Bei **Akkus suchen** erscheint der Sensor als „Ruuvi“, hinzufügen, fertig: Kachel mit Temperatur und
+Luftfeuchte (Ruuvi Air zusätzlich CO₂), im Detail auch Luftdruck, Feinstaub und Batterie.
+
+Genauso die **SwitchBot**-Thermo-Hygrometer (Meter, Meter Plus, Outdoor Meter): erscheinen als „SwitchBot Meter“,
+Kachel mit Temperatur und Luftfeuchte, im Detail der Batteriestand. Ein SwitchBot-Hub ist nicht nötig.
+
 ### Akkus und Power Stations per Bluetooth
 
 1. **App des Herstellers schließen** (z. B. „Be in Charge“, „Power Quarry“, „BullTron“, „Xiaoxiang“, „JK BMS“, „LiTime“) – der Akku spricht nur mit einem Gerät.
@@ -195,6 +206,10 @@ Das Protokoll ist nachgebaut, nicht vom Hersteller dokumentiert. Bitte meldet, o
 
 Das Display liest nur – es schaltet am Akku nichts und ändert keine Einstellungen. Klappt die Verbindung nicht,
 steht unter „Protokoll“ in der Akku-Karte, woran es hängt.
+
+**PIN oder Passwort:** Verlangt ein Akku beim Koppeln eine PIN (z. B. Super B) oder ist in seiner App ein Passwort
+gesetzt, beim Hinzufügen „Ja“ wählen bzw. später im Feld **PIN / Passwort** eintragen. **CS-BATTERIES** *(Beta,
+ungetestet)*: Die Anmeldung der CS-App übernimmt das Display selbst – nur ein eigenes Passwort muss eingetragen werden.
 
 **Power Stations** (Bluetti, Allpowers, Anker SOLIX, EcoFlow – ungetestet) richtest du genauso ein. In der Karte
 erscheinen dann Knöpfe für den **AC- und DC-Ausgang**. **EcoFlow** braucht einmalig die Benutzer-ID deines Kontos:
@@ -307,7 +322,7 @@ nicht direkt übernommen, sondern von Hand eingearbeitet (siehe [CONTRIBUTING.md
 
 Lean firmware for the ESP32-2432S028R "Cheap Yellow Display" ([buy on Amazon](https://link.amazon/B00jjmvuF)): shows all Victron values and gas levels as tiles –
 from a Cerbo GX via WiFi (MQTT on LAN, auto-discovery, optional), from Victron devices via Bluetooth (Instant
-Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense tank modules as untested beta. Tap a
+Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense tank modules, Ruuvi and SwitchBot climate sensors as untested beta. Tap a
 tile to set the MultiPlus input current limit and mode. Setup: join WiFi `SOC-Victron-XXXXXX` (default password
 `panelsat`), the setup page opens automatically (captive portal, http://4.3.2.1/), set your own access password
 (web UI), then your WiFi. The setup WiFi password is separate (default `panelsat`, can be changed or switched off).

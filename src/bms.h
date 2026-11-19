@@ -84,6 +84,16 @@
 #ifndef BMS_SUPERSENSE_ON
 #define BMS_SUPERSENSE_ON 0
 #endif
+// Ruuvi Tag / Ruuvi Air (Hersteller-ID 0x0499): Klima-Sensor, sendet seine Werte offen in Werbepaketen – keine
+// Verbindung, kein Passwort. BETA, ungetestet. Formate 3, 5 (Tag) und 6 (Air) nach der offiziellen Ruuvi-Doku.
+#ifndef BMS_RUUVI_ON
+#define BMS_RUUVI_ON 1
+#endif
+// SwitchBot Thermo-Hygrometer (Meter, Meter Plus, Outdoor Meter): Werte offen in Werbepaketen (Dienst 0xFD3D bzw.
+// Hersteller-ID 0x0969), keine Verbindung. BETA, ungetestet. Nach der SwitchBot-BLE-Doku (OpenWonderLabs).
+#ifndef BMS_SWITCHBOT_ON
+#define BMS_SWITCHBOT_ON 1
+#endif
 #define BMS_TANKS 4   // Kanaele je SuperSense-Tankmodul
 
 #define BMS_MAX 6
@@ -100,13 +110,16 @@ enum BmsModel : uint8_t {
   BMS_BLUETTI = 18, BMS_ALLPOWERS = 19,  // Power Stations (bms_ps.inc)
   BMS_ANKER = 20 /*C1000, C800, F2600*/, BMS_ANKER_C300 = 21, BMS_ANKER_G2 = 22 /*C1000 Gen 2*/, BMS_ANKER_F3800 = 23,
   BMS_ECOFLOW = 24 /*Delta 2, River 2*/, BMS_ECOFLOW_PB = 25 /*River 3, Delta 3*/,
-  BMS_SS_TANK = 26   // SuperSense Tankmodul (SSBT)
+  BMS_SS_TANK = 26,  // SuperSense Tankmodul (SSBT)
+  BMS_RUUVI = 27,    // Ruuvi Tag / Air (nur Werbepakete)
+  BMS_SWITCHBOT = 28 // SwitchBot Meter / Meter Plus / Outdoor Meter (nur Werbepakete)
 };
 
 // Geraeteart (bestimmt die Kachel: Akku/Shunt = Batteriewaechter, sonst Solar, Ladebooster, Wechselrichter)
 enum BmsDev : uint8_t {
   BMS_DEV_BATTERY = 0, BMS_DEV_SOLAR = 1, BMS_DEV_DCDC = 2, BMS_DEV_INVERTER = 3, BMS_DEV_SHUNT = 4, BMS_DEV_PSTATION = 5,
-  BMS_DEV_TANK = 6   // Tankmodul: tank_pct/tank_temp je Kanal
+  BMS_DEV_TANK = 6,  // Tankmodul: tank_pct/tank_temp je Kanal
+  BMS_DEV_CLIMATE = 7   // Klima-Sensor (Ruuvi): temp, hum, press, co2, pm25
 };
 BmsDev bms_dev_of(BmsModel m);
 // Abgleich/Erweiterung nach patman15/aiobmsble (Apache-2.0): Daly-Varianten und -Erkennung, JK-Aufbau nach
@@ -151,6 +164,9 @@ struct BmsInfo {
   int tank_pct[BMS_TANKS] = {-1, -1, -1, -1};
   int tank_raw[BMS_TANKS] = {-1, -1, -1, -1};
   float tank_temp[BMS_TANKS] = {NAN, NAN, NAN, NAN};
+  // Klima-Sensor (BMS_DEV_CLIMATE): temp = Temperatur, volt = Batterie; NAN/-1 = nicht gemeldet
+  float hum = NAN, press = NAN, pm25 = NAN;   // % rF, hPa, µg/m³
+  int co2 = -1;                               // ppm (Ruuvi Air)
 };
 
 struct BmsFound {

@@ -138,7 +138,7 @@
 [">Ja</option>", ">Yes</option>"],
 ["Kopplungs-PIN bzw. Passwort aus der Akku-App (steht auf dem Akku, in der Anleitung bzw. in der App)", "Pairing PIN or password from the battery app (on the battery, in its manual or in the app)"],
 [">Abbrechen</button>", ">Cancel</button>"],
-["Bitte die PIN eingeben (nur Ziffern).", "Please enter the PIN (digits only)."],
+["Bitte die PIN bzw. das Passwort eingeben.", "Please enter the PIN or password."],
 ["Eingerichtet – koppele mit PIN …", "Set up – pairing with PIN …"],
 ["Eingerichtet – verbinde …", "Set up – connecting …"],
 ["Begrenzung gesendet.", "Limit sent."],
