@@ -848,7 +848,7 @@ static void info_open() {
 // Nur waehrend es offen ist im Speicher.
 static lv_obj_t *s_bat = nullptr;
 static std::string s_bat_key;
-static const int BAT_N = 9;   // Zeilen je Geraeteart aus bms_rows() (Akku, Shunt, Laderegler, DC-DC-Lader, Wechselrichter)
+static const int BAT_N = 48;   // Zeilen aus bms_rows() plus je Zelle eine (scrollbar)
 static lv_obj_t *s_bat_title = nullptr, *s_bat_lbl[BAT_N] = {nullptr}, *s_bat_val[BAT_N] = {nullptr};
 
 static void bat_close_cb(lv_event_t *) {
@@ -866,6 +866,7 @@ static void bat_sync() {
   }
   (lv_label_set_text)(s_bat_title, b.name.c_str());
   auto rows = bms_rows(b);
+  for (auto &c : bms_cell_rows(b)) rows.push_back(c);
   for (int i = 0; i < BAT_N; i++) {
     if (i < (int)rows.size()) {
       (lv_label_set_text)(s_bat_lbl[i], tr(rows[i].first));
@@ -887,7 +888,9 @@ static void bat_open(const std::string &key) {
   lv_obj_set_size(s_bat, W, H);
   lv_obj_set_style_bg_opa(s_bat, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(s_bat, C_BG, 0);
-  lv_obj_clear_flag(s_bat, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(s_bat, LV_OBJ_FLAG_SCROLLABLE);   // viele Zeilen (Zellen): wischen zum Blaettern
+  lv_obj_set_scroll_dir(s_bat, LV_DIR_VER);
+  lv_obj_set_style_pad_bottom(s_bat, 8, 0);
   lv_obj_add_flag(s_bat, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(s_bat, bat_close_cb, LV_EVENT_CLICKED, nullptr);
   s_bat_title = lv_label_create(s_bat);

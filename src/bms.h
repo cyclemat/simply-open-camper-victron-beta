@@ -238,6 +238,8 @@ int bms_ef_login_state();                             // 0 nichts, 1 laeuft, 2 o
 std::string bms_ef_login_text();
 std::string bms_value_text(const BmsInfo &b);         // Kurzfassung ("78 %  ·  13,25 V  ·  40 W", Solar: W · V · Phase)
 std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b);   // alle Werte (Bezeichnung, Wert)
+std::string bms_cells_text(const BmsInfo &b);   // "3,312–3,327 V  ·  Δ 15 mV", "" ohne Zellwerte
+std::vector<std::pair<std::string, std::string>> bms_cell_rows(const BmsInfo &b);   // je Zelle eine Zeile
 #else
 inline void bms_begin() {}
 inline uint32_t bms_version() { return 0; }

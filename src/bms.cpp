@@ -2280,6 +2280,9 @@ void bms_poll_now() {
       chg_on = q[166 + o];
       dis_on = q[167 + o];
       alarms = o ? (u32(166) >> 16) : (u32(134) & 0xFFFF);   // wie aiobmsble
+      int nc = __builtin_popcount(u32(54 + o / 2));
+      for (int k = 0; k < nc && k < 32; k++)
+        if (u16(6 + 2 * k)) cmv.push_back(u16(6 + 2 * k));
       ok = true;
     }
 #endif
@@ -2421,7 +2424,12 @@ void bms_poll_now() {
       cyc = be16(12);
       if (full > 0) soc = ah / full * 100.0f;
       ok = !isnan(soc);
-      if (rd(0x1388, 0x22) && d.size() >= 38 && be16(34) > 0) temp = (int16_t)be16(36) / 10.0f;
+      if (rd(0x1388, 0x22) && d.size() >= 38) {
+        int nc = be16(0) > 16 ? 16 : be16(0);
+        for (int k = 0; k < nc; k++)
+          if (be16(2 + 2 * k)) cmv.push_back(be16(2 + 2 * k) * 100);   // 0,1 V -> mV
+        if (be16(34) > 0) temp = (int16_t)be16(36) / 10.0f;
+      }
       if (rd(0x13EC, 8) && d.size() >= 14) {
         uint8_t st = (uint8_t)d[13];
         chg_on = st & 0x02;
@@ -2826,6 +2834,11 @@ void bms_poll_now() {
       ok = true;
       if (f2.size() >= 84) {
         const uint8_t *t = (const uint8_t *)f2.data();
+        int nc = t[14] << 8 | t[15];
+        for (int k = 0; k < nc && k < 32 && 17 + 2 * k < (int)f2.size(); k++) {
+          uint16_t mv = t[16 + 2 * k] << 8 | t[17 + 2 * k];
+          if (mv) cmv.push_back(mv);
+        }
         int nt = t[80] << 8 | t[81];
         if (nt > 0 && f2.size() >= 84) temp = (int16_t)(t[82] << 8 | t[83]) / 10.0f;
       }
@@ -2857,6 +2870,8 @@ void bms_poll_now() {
       chg_on = q[46 + sh] == 0x1;
       dis_on = q[47 + sh] == 0x1;
       cap = (int)(u32(50 + sh) / 1000000UL);
+      for (int k = 0; k < cells; k++)
+        if (u16(34 + 2 * k)) cmv.push_back(u16(34 + 2 * k));
       if (tc > 0) {
         float sum = 0;
         for (int t = 0; t < tc; t++) sum += (int16_t)u16(34 + cells * 2 + 2 * t);
@@ -2892,6 +2907,11 @@ void bms_poll_now() {
         for (int i = 14; i < 29; i++) alarms |= (uint8_t)d[i];
         chg_on = d[29] & 0x10;
         dis_on = d[29] & 0x20;
+      }
+      if (full && rd(0x0015, 0x1F) && d.size() >= 4) {   // Zellen (wie aiobmsble)
+        int nc = be16(0) > 31 ? 31 : be16(0);
+        for (int k = 0; k < nc && 3 + 2 * k < (int)d.size(); k++)
+          if (be16(2 + 2 * k)) cmv.push_back(be16(2 + 2 * k));
       }
     }
 #endif
@@ -3410,6 +3430,35 @@ std::string bms_value_text(const BmsInfo &b) {
   }
 }
 
+// Zellen kurz: "3,312–3,327 V  ·  Δ 15 mV" ("" ohne Zellwerte)
+std::string bms_cells_text(const BmsInfo &b) {
+  uint16_t lo = 0xFFFF, hi = 0;
+  for (uint16_t mv : b.cells_mv) {
+    lo = std::min(lo, mv);
+    hi = std::max(hi, mv);
+  }
+  if (b.cells_mv.empty()) return "";
+  std::string s = fnum(lo / 1000.0f, 3, "");
+  while (!s.empty() && s.back() == ' ') s.pop_back();
+  return s + "–" + fnum(hi / 1000.0f, 3, "V") + "  ·  Î " + std::to_string(hi - lo) + " mV";
+}
+
+// Jede Zelle einzeln ("Zelle 1", "3,312 V (min)") – fuer Uebersichten mit Zeilen (CYD, rundes Panel)
+std::vector<std::pair<std::string, std::string>> bms_cell_rows(const BmsInfo &b) {
+  std::vector<std::pair<std::string, std::string>> r;
+  if (b.cells_mv.size() < 2) return r;
+  uint16_t lo = *std::min_element(b.cells_mv.begin(), b.cells_mv.end());
+  uint16_t hi = *std::max_element(b.cells_mv.begin(), b.cells_mv.end());
+  for (size_t i = 0; i < b.cells_mv.size(); i++) {
+    uint16_t mv = b.cells_mv[i];
+    std::string v = fnum(mv / 1000.0f, 3, "V");
+    if (hi > lo && mv == hi) v += " (max)";
+    else if (hi > lo && mv == lo) v += " (min)";
+    r.emplace_back(std::string(tr("Zelle ")) + std::to_string(i + 1), v);
+  }
+  return r;
+}
+
 std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b) {
   std::vector<std::pair<std::string, std::string>> r;
   bool h = b.has;
@@ -3513,6 +3562,17 @@ std::vector<std::pair<std::string, std::string>> bms_rows(const BmsInfo &b) {
       add("Restzeit", rest);
       if (!sb || b.cycles >= 0) add("Zyklen", b.cycles >= 0 ? std::to_string(b.cycles) : "–");
       if (sb) add("Gesundheit", b.soh >= 0 ? std::to_string(b.soh) + " %" : "–");
+      else if (b.soh >= 0) add("Gesundheit", std::to_string(b.soh) + " %");
+      if (b.capacity_ah > 0)   // "63 / 100 Ah" (Rest aus dem Ladezustand)
+        add("Kapazität", (b.soc >= 0 ? std::to_string((int)lroundf(b.capacity_ah * b.soc / 100.0f)) + " / " : std::string()) +
+                             std::to_string(b.capacity_ah) + " Ah");
+      std::string zs = bms_cells_text(b);
+      if (!zs.empty()) add("Zellen", zs);
+      if (b.alarms) {
+        char t[24];
+        snprintf(t, sizeof(t), "0x%lX", (unsigned long)b.alarms);
+        add("Alarmcode", t);
+      }
     }
   }
   std::string z;

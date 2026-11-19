@@ -225,6 +225,11 @@ Kachel mit Temperatur und Luftfeuchte, im Detail der Batteriestand. Ein SwitchBo
 4. Das Display verbindet sich und bleibt verbunden. Super B bleibt verbunden und meldet seine Werte selbst. Alle anderen werden
    alle 20 Sekunden kurz verbunden und abgefragt (Power Quarry: Ladezustand einmal pro Minute). Die Kachel erscheint mit den ersten Werten.
 
+**Zellspannungen:** Bei vielen Akkus sieht man jetzt auch jede einzelne Zelle – JBD/Xiaoxiang, CS-BATTERIES, JK-BMS,
+Daly/Bulltron, ANT, Eco-Worthy, Renogy, Vatrer und Power Quarry/Shentec. Kachel **2 s drücken**: Übersicht mit
+Kapazität, Gesundheit, Zellen min–max mit Differenz (Δ) und darunter jede Zelle einzeln (wischen zum Blättern). In
+der Weboberfläche stehen die Zellen in der Akku-Karte.
+
 Das Display liest nur – es schaltet am Akku nichts und ändert keine Einstellungen. Klappt die Verbindung nicht,
 steht unter „Protokoll“ in der Akku-Karte, woran es hängt.
 
