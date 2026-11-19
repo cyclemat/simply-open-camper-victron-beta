@@ -1,0 +1,36 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: PlatformIO installieren
+        run: pip install "platformio==6.2.0"
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - name: Bauen
+        run: pio run -e cyd-victron -e cyd-victron-en
+      - name: Firmware ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: victron-display-firmware
+          path: |
+            .pio/build/cyd-victron/firmware.bin
+            .pio/build/cyd-victron/firmware.factory.bin
+            .pio/build/cyd-victron-en/firmware.bin
+            .pio/build/cyd-victron-en/firmware.factory.bin

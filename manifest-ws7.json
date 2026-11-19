@@ -1,0 +1,16 @@
+{
+  "name": "Victron-Display 7\" (Waveshare ESP32-S3)",
+  "version": "0.2.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "release/victron-display-ws7.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

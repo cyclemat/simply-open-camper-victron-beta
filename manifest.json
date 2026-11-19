@@ -1,0 +1,16 @@
+{
+  "name": "Victron-Display (Simple Open Camper)",
+  "version": "0.2.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "release/victron-display-cyd.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

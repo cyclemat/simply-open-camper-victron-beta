@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 44" width="72" height="44">
+  <!-- Camper-Bus, faehrt nach rechts -->
+  <path d="M4 34 V12 Q4 6 10 6 H46 Q51 6 54 10 L64 22 Q68 26 68 31 V34 Z" fill="#e9eef5" stroke="#5b6b80" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M4 26 H68 V34 H4 Z" fill="#1f8cff"/>
+  <path d="M4 26 H68" stroke="#ff8a00" stroke-width="2.5"/>
+  <path d="M47 10 H52 L61 22 H47 Z" fill="#8fd0ff" stroke="#5b6b80" stroke-width="1.5" stroke-linejoin="round"/>
+  <rect x="10" y="11" width="13" height="10" rx="2" fill="#8fd0ff" stroke="#5b6b80" stroke-width="1.5"/>
+  <rect x="27" y="11" width="13" height="10" rx="2" fill="#8fd0ff" stroke="#5b6b80" stroke-width="1.5"/>
+  <rect x="64" y="27" width="4" height="3" rx="1" fill="#ffd23a"/>
+  <rect x="4" y="27" width="3" height="3" rx="1" fill="#ff4a3a"/>
+  <circle cx="18" cy="35" r="6" fill="#2b3038"/><circle cx="18" cy="35" r="2.5" fill="#c9d1db"/>
+  <circle cx="54" cy="35" r="6" fill="#2b3038"/><circle cx="54" cy="35" r="2.5" fill="#c9d1db"/>
+</svg>

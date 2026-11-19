@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Victron-Display Flasher</title>
+<meta name="description" content="Victron-Display (CYD 2,8" oder Waveshare 7") direkt aus dem Browser aufspielen.">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0b1118;--card:rgba(255,255,255,.93);--fg:#1c2530;--muted:#5b6876;--line:rgba(0,0,0,.08);--acc:#0b6bcb;--warn-bg:#fff4e0;--warn-fg:#7a4b00;--warn-line:#f0c46c;--code:#eef2f6;--seg:#e8edf2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--card:rgba(20,28,37,.88);--fg:#e6edf3;--muted:#a3b1be;--line:rgba(255,255,255,.10);--acc:#4ea3ff;--warn-bg:#3a2a0c;--warn-fg:#ffd58a;--warn-line:#6b4d12;--code:#0f161d;--seg:#0f161d}}
+:root[data-theme="dark"]{--card:rgba(20,28,37,.88);--fg:#e6edf3;--muted:#a3b1be;--line:rgba(255,255,255,.10);--acc:#4ea3ff;--warn-bg:#3a2a0c;--warn-fg:#ffd58a;--warn-line:#6b4d12;--code:#0f161d;--seg:#0f161d}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+ background:linear-gradient(rgba(5,10,16,.55),rgba(5,10,16,.80)),url("assets/flasher_bg.jpg") center top/cover no-repeat fixed,var(--bg)}
+main{max-width:720px;margin:0 auto;padding:clamp(28px,8vh,72px) 16px 48px}
+h1{font-size:1.8rem;margin:0 0 4px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+.sub{color:#dbe6f0;margin:0 0 20px;text-shadow:0 1px 8px rgba(0,0,0,.8)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:16px 0;
+ -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.card h2{font-size:1.1rem;margin:0 0 10px}
+ol,ul{margin:0;padding-left:1.3em}
+li{margin:4px 0}
+.warn{background:var(--warn-bg);color:var(--warn-fg);border:1px solid var(--warn-line);border-radius:10px;padding:12px 14px;margin:14px 0}
+.lang{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:6px 0 12px}
+.lang .lbl{color:var(--muted);font-size:.95rem}
+.seg{display:inline-flex;background:var(--seg);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{font:600 .95rem system-ui,sans-serif;border:0;background:transparent;color:var(--fg);padding:8px 16px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:#fff}
+.btn{display:flex;justify-content:center;padding:4px 0}
+esp-web-install-button button[slot=activate]{font:600 1.05rem system-ui,sans-serif;background:var(--acc);color:#fff;border:0;border-radius:10px;padding:14px 26px;cursor:pointer}
+.nosup{color:var(--warn-fg);text-align:center}
+.ver{color:var(--muted);font-size:.9rem;text-align:center;margin-top:6px}
+a{color:var(--acc)}
+code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:.92em}
+footer{color:#c9d5e0;font-size:.9rem;text-align:center;margin-top:28px;text-shadow:0 1px 6px rgba(0,0,0,.8)}
+footer a{color:#9fd0ff}
+/* Sprache: Texte mit data-l="de" bzw. data-l="en" */
+html[lang="de"] [data-l="en"],html[lang="en"] [data-l="de"]{display:none}
+/* Geraet: Texte mit data-d="cyd" bzw. data-d="ws" */
+html[data-dev="cyd"] [data-d="ws"],html[data-dev="ws"] [data-d="cyd"]{display:none}
+.seg button:disabled{opacity:.4;cursor:not-allowed}
+</style>
+</head>
+<body>
+<main>
+<h1><span data-l="de">Victron-Display aufspielen</span><span data-l="en">Install the Victron display</span></h1>
+<p class="sub"><span data-l="de">Firmware direkt aus dem Browser – ohne Programme. Für das 2,8"-Display ESP32-2432S028R („Cheap Yellow Display“) oder das Waveshare ESP32-S3 Touch-LCD 7".</span><span data-l="en">Firmware straight from the browser – no software needed. For the 2.8" ESP32-2432S028R (“Cheap Yellow Display”) or the Waveshare ESP32-S3 Touch LCD 7".</span></p>
+
+<div class="card">
+<div class="lang"><span class="lbl"><span data-l="de">Gerät</span><span data-l="en">Device</span></span>
+<div class="seg" role="group" aria-label="Gerät / Device"><button type="button" data-dev="cyd" aria-pressed="true">CYD 2,8"</button><button type="button" data-dev="ws" aria-pressed="false">Waveshare 7"</button></div></div>
+<div class="lang"><span class="lbl"><span data-l="de">Sprache der Firmware</span><span data-l="en">Firmware language</span></span>
+<div class="seg" role="group" aria-label="Sprache / Language"><button type="button" data-set="de" aria-pressed="true">Deutsch</button><button type="button" data-set="en" aria-pressed="false">English</button></div></div>
+<h2><span data-l="de">So geht's</span><span data-l="en">How it works</span></h2>
+<ol data-l="de">
+<li>Display per USB-Kabel an den PC anschließen (Datenkabel, kein reines Ladekabel)<span data-d="ws"> – beim Waveshare an die Buchse „USB“</span>.</li>
+<li>Oben Gerät und Sprache wählen, auf <b>Installieren</b> klicken und im Fenster den Anschluss wählen<span data-d="cyd"> (meist „USB-SERIAL CH340“ oder „CP210x“)</span><span data-d="ws"> (meist „USB JTAG/serial debug unit“)</span>.</li>
+<li>Warten, bis „Installation complete“ erscheint, dann das Display neu starten.</li>
+<li data-d="cyd">Am Handy mit dem WLAN <code>SOC-Victron-…</code> verbinden (Passwort <code>panelsat</code>) – die Einrichtung öffnet sich von selbst.</li>
+<li data-d="ws">Die Einrichtung läuft direkt am Bildschirm: WLAN wählen, dann Victron-Geräte, Cerbo GX, Gasflaschen oder Akkus einrichten.</li>
+</ol>
+<ol data-l="en">
+<li>Connect the display to the computer with a USB cable (a data cable, not a charge-only cable).</li>
+<li>Choose device and language above, click <b>Install</b> and pick the serial port in the dialog (usually “USB-SERIAL CH340” or “CP210x”).</li>
+<li>Wait until “Installation complete” appears, then restart the display.</li>
+<li>On your phone, join the WiFi <code>SOC-Victron-…</code> (password <code>panelsat</code>) – the setup page opens by itself.</li>
+</ol>
+<div class="warn"><span data-l="de"><b>Achtung:</b> Das Aufspielen hier löscht alle Einstellungen (WLAN, Geräte, Kacheln). Ein schon eingerichtetes
+Display bitte über seine eigene Weboberfläche aktualisieren (<span data-d="cyd"><b>Firmware → Update-Modus</b>, Datei
+<a href="release/ota/victron-display-cyd.bin">ota/victron-display-cyd.bin</a></span><span data-d="ws">Editor → <b>System → Firmware aktualisieren</b>, Datei
+<a href="release/ota/victron-display-ws7.bin">ota/victron-display-ws7.bin</a></span>).</span><span data-l="en"><b>Note:</b> Installing here erases all settings (WiFi, devices, tiles). To update a display that is already set up, use
+its own web interface (<b>Firmware → Start update mode</b>, file
+<a href="release/ota/victron-display-cyd-en.bin">ota/victron-display-cyd-en.bin</a>).</span></div>
+<div class="btn">
+<esp-web-install-button id="inst" manifest="manifest.json">
+<button slot="activate"><span data-l="de">Installieren</span><span data-l="en">Install</span></button>
+<p slot="unsupported" class="nosup"><span data-l="de">Dein Browser kann nicht auf USB zugreifen. Bitte <b>Chrome</b> oder <b>Edge</b> am PC/Mac verwenden.</span><span data-l="en">Your browser cannot access USB. Please use <b>Chrome</b> or <b>Edge</b> on a PC/Mac.</span></p>
+<p slot="not-allowed" class="nosup"><span data-l="de">Diese Seite muss über https geöffnet werden.</span><span data-l="en">This page must be opened via https.</span></p>
+</esp-web-install-button>
+</div>
+<p class="ver" id="ver"></p>
+</div>
+
+<div class="card">
+<h2><span data-l="de">Kein Anschluss in der Liste?</span><span data-l="en">No port in the list?</span></h2>
+<ul data-l="de">
+<li>Anderes USB-Kabel probieren – viele Kabel laden nur.</li>
+<li>Treiber für den USB-Wandler installieren (CH340 bzw. CP210x).</li>
+<li>Bricht das Schreiben ab: Display über einen USB-Hub mit eigenem Netzteil anschließen.</li>
+</ul>
+<ul data-l="en">
+<li>Try another USB cable – many cables only charge.</li>
+<li>Install the driver for the USB converter (CH340 or CP210x).</li>
+<li>If writing aborts: connect the display through a powered USB hub.</li>
+</ul>
+</div>
+
+<footer><a href="https://github.com/cyclemat/simply-open-camper-victron-beta"><span data-l="de">Code und Anleitung auf GitHub</span><span data-l="en">Code and manual on GitHub</span></a> ·
+<a href="https://paypal.me/cyclemat">☕ Support</a></footer>
+</main>
+<script>
+// Manifest je Geraet und Sprache (Waveshare 7": vorerst nur Deutsch)
+const MAN = {cyd: {de: 'manifest.json', en: 'manifest-en.json'}, ws: {de: 'manifest-ws7.json'}};
+let dev = 'cyd', lang = 'de';
+function apply() {
+  const ok = MAN[dev][lang] || MAN[dev].de;
+  document.documentElement.lang = lang;
+  document.documentElement.dataset.dev = dev;
+  document.getElementById('inst').setAttribute('manifest', ok);
+  document.querySelectorAll('[data-set]').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.set === lang));
+    b.disabled = !MAN[dev][b.dataset.set];
+  });
+  document.querySelectorAll('[data-dev]').forEach(b => { if (b.tagName === 'BUTTON') b.setAttribute('aria-pressed', String(b.dataset.dev === dev)); });
+  try { localStorage.setItem('soc_flash_lang', lang); localStorage.setItem('soc_flash_dev', dev); } catch (e) {}
+  fetch(ok).then(r => r.json()).then(m => {
+    document.getElementById('ver').textContent = m.name + ' · Version ' + m.version + (MAN[dev][lang] ? '' : ' · nur Deutsch');
+  }).catch(() => {});
+}
+function setLang(l) { lang = l; apply(); }
+document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => setLang(b.dataset.set)));
+document.querySelectorAll('button[data-dev]').forEach(b => b.addEventListener('click', () => { dev = b.dataset.dev; apply(); }));
+try { const d = localStorage.getItem('soc_flash_dev'); if (d === 'ws' || d === 'cyd') dev = d; } catch (e) {}
+let start = 'de';
+try { start = localStorage.getItem('soc_flash_lang') || ''; } catch (e) { start = ''; }
+if (start !== 'de' && start !== 'en') start = (navigator.language || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+setLang(start);
+</script>
+</body>
+</html>
