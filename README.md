@@ -115,6 +115,12 @@ Multitouch, 8 MB PSRAM). Gleiche Geräte wie beim kleinen Display, aber mit **Ei
 - **Victron** (Bluetooth und Cerbo GX), **Gas** (Truma LevelControl, Mopeka), **Akkus und Power Stations**,
   **SuperSense-Tankmodul** (Beta)
 - **Shelly**-Schalter und -Dimmer über MQTT – auf Wunsch mit **eingebautem MQTT-Broker**, kein eigener Server nötig
+- **Hobby-Wohnwagen/-Reisemobile** *(Beta)*: Lichter schalten, Bordbatterie, Wasser, Temperaturen, Heizung,
+  Kühlschrank, Klima – über die **HobbyConnect-Box per Bluetooth** oder per **Kabel am LSG** (CI-BUS, RS232-TTL-Wandler,
+  z. B. MAX3232 an der UART-Stiftleiste GPIO 15/16). Beides ab Werk aus: **Einstellungen → Fahrzeug**.
+  Verdrahtung: Wandler **VCC an 3,3 V** (nicht 5 V), GND an GND, TXD des Wandlers an GPIO-RX, RXD an GPIO-TX;
+  RS232-Seite an den Hobby-Kabelsatz „Bluetooth-Modul“. Kommt nichts an: RX/TX tauschen.
+  **Niemals RS232 (±12 V) direkt an den ESP32!**
 - Kacheln erscheinen von selbst, sobald ein Gerät Werte liefert; Feinschliff (Seiten, Größen, Hintergründe) im
   Browser-Editor des Displays
 - vorerst **nur Deutsch** und **nur als fertige Firmware** (Web-Flasher: Gerät „Waveshare 7"“ wählen)
@@ -191,7 +197,7 @@ leer“ stehen im Status.
 
 ### SuperSense (Beta, ungetestet)
 
-- **Tankmodul** („SSBT…“): erscheint bei **Akkus suchen** als „SuperSense Tankmodul (Beta)“. Hinzufügen – je
+- **Tankmodul** („SSBT…“): erscheint bei **Sensoren suchen** als „SuperSense Tankmodul (Beta)“. Hinzufügen – je
   angeschlossenem Tanksensor eine Kachel mit Füllstand (ohne Kalibrierung: Rohwert 2475 = voll) und Temperatur.
   Die SuperSense-App dabei schließen.
 
@@ -211,7 +217,7 @@ Bluetooth senden („Broadcast“). Das Display hört nur mit – keine Kopplung
      eintragen. Der Schlüssel ist nicht die 4-stellige Geräte-PIN der App. Bei Medium/High sendet der Sensor Inhalt und
      Tankart nicht mit – dann zeigt das Display nur Prozent.
 4. **Simarine-App schließen bzw. vom Sensor trennen** – solange ein Handy verbunden ist, sendet der Sensor nicht.
-5. In der Weboberfläche bei **Akkus und Power Stations per Bluetooth** „Akkus suchen“. Der Sensor erscheint als „Simarine STRx“. Hinzufügen –
+5. In der Weboberfläche bei **Sensoren per Bluetooth** „Sensoren suchen“. Der Sensor erscheint als „Simarine STRx“. Hinzufügen –
    Kachel mit Füllstand, im Detail Inhalt in Litern, Tankart und ob der Funk offen oder verschlüsselt ist.
 
 Fehlt der Wert, steht der Grund im Status: Broadcast aus, Schlüssel fehlt, Schlüssel passt nicht. Wird der Schlüssel in
@@ -220,15 +226,15 @@ der Simarine-App neu erzeugt, den neuen eintragen. Nicht als einzige Messung fü
 ### Ruuvi und SwitchBot (Beta, ungetestet)
 
 Ruuvi Tag und Ruuvi Air senden ihre Werte offen per Bluetooth – keine Kopplung, kein Passwort, die Ruuvi-App darf
-offen bleiben. Bei **Akkus suchen** erscheint der Sensor als „Ruuvi“, hinzufügen, fertig: Kachel mit Temperatur und
+offen bleiben. Bei **Sensoren suchen** erscheint der Sensor als „Ruuvi“, hinzufügen, fertig: Kachel mit Temperatur und
 Luftfeuchte (Ruuvi Air zusätzlich CO₂), im Detail auch Luftdruck, Feinstaub und Batterie.
 
-**Dieselheizung und Kühlbox** *(Beta, ungetestet)*: werden bei „Akkus suchen“ als „Dieselheizung“ bzw. „Kühlbox“
+**Dieselheizung und Kühlbox** *(Beta, ungetestet)*: werden bei „Heizung/Kühlbox suchen“ (eigene Karte) als „Dieselheizung“ bzw. „Kühlbox“
 gefunden. Hersteller-App vorher schließen; Kühlbox beim ersten Mal ggf. Settings-Taste an der Box drücken. In der
 Akku-Karte gibt es dann Knöpfe für **Ein/Aus** und **− / +** (Heizung: Stufe bzw. Temperatur, Kühlbox: Soll). Bei einem
 Heizungsfehler (E…) ist nur noch Ausschalten möglich.
 
-**BTHome** (Shelly BLU, Xiaomi mit pvvx-Firmware …) erscheint bei „Akkus suchen“ als „BTHome“. Kachel mit
+**BTHome** (Shelly BLU, Xiaomi mit pvvx-Firmware …) erscheint bei „Sensoren suchen“ als „BTHome“. Kachel mit
 Temperatur/Feuchte bzw. dem Zustand („Tür offen“, „Bewegung“). Verschlüsselte Geräte: Schlüssel (32 Zeichen) ins
 Feld **PIN / Passwort**.
 
@@ -382,8 +388,8 @@ and show HA values as tiles. No data loop: values it already receives via MQTT (
 from HA never go back to HA, topics below `homeassistant/` are never read as input.
 
 **Big display (beta):** the Victron display also runs on the **Waveshare ESP32-S3 Touch LCD 7"**
-([Amazon](https://www.amazon.de/dp/B0FDQXKFJ5)) with settings right on the screen, Shelly support and a built-in
-MQTT broker – German only for now, ready-made firmware via the web flasher (choose “Waveshare 7"”).
+([Amazon](https://www.amazon.de/dp/B0FDQXKFJ5)) with settings right on the screen, Shelly support, a built-in
+MQTT broker and Hobby caravans/motorhomes (HobbyConnect box via Bluetooth or CI-BUS cable, beta) – German only for now, ready-made firmware via the web flasher (choose “Waveshare 7"”).
 
 **Coming soon:** the big brother – a 7" touch panel for the whole camper (Zigbee lights and switches, rules with
 graphical blocks, Truma/Alde heating, everything from this display and more) will be released in a few days.

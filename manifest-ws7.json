@@ -1,6 +1,6 @@
 {
   "name": "Victron-Display 7\" (Waveshare ESP32-S3)",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "new_install_prompt_erase": true,
   "builds": [
     {

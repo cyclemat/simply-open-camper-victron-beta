@@ -1,4 +1,4 @@
-# Fertige Firmware – Victron-Display (CYD 2,8" und Waveshare 7"), Version 0.2.0
+# Fertige Firmware – Victron-Display (CYD 2,8": Version 0.2.4, Waveshare 7": Version 0.2.5)
 
 Die vorige Fassung liegt in [`vorher/`](vorher/).
 
