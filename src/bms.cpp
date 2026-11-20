@@ -57,6 +57,17 @@ const char *bms_model_text(BmsModel m) {
   }
 }
 
+BmsCat bms_cat_of(BmsModel m) {
+  switch (bms_dev_of(m)) {
+    case BMS_DEV_PSTATION: return BMS_CAT_PS;
+    case BMS_DEV_TANK:
+    case BMS_DEV_CLIMATE: return BMS_CAT_SENSOR;
+    case BMS_DEV_HEATER:
+    case BMS_DEV_FRIDGE: return BMS_CAT_HEAT;
+    default: return BMS_CAT_BAT;
+  }
+}
+
 BmsDev bms_dev_of(BmsModel m) {
   switch (m) {
     case BMS_RENOGY_BT:   // noch nicht erkannt: meist ein Laderegler
@@ -3894,7 +3905,7 @@ std::string bms_add(const std::string &mac_in, uint8_t addr_type, const std::str
   if (find_mac(mac)) return "Dieses Gerät ist schon eingerichtet";
   size_t n = 0;
   for (auto &b : s_bats) n += !b.remove;
-  if (n >= BMS_MAX) return "Es sind höchstens sechs Geräte möglich";
+  if (n >= BMS_MAX) return "Kein Platz mehr – es sind schon so viele Bluetooth-Geräte eingerichtet, wie möglich sind";
   Bat b;
   b.mac = mac;
   b.type = addr_type;

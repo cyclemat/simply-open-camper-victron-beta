@@ -224,5 +224,15 @@
 ["'Eingerichtet – Flasche/Tank unten auswählen.'", "'Set up – choose the bottle/tank below.'"],
 ["'Akku '+x.battery+' %',x.temp+' °C'", "'Battery '+x.battery+' %',x.temp+' °C'"],
 ["<b>Beta:</b> SuperSense-Tankmodule (Name „SSBT…“, bis 4 Tanksensoren, auch SuperSense PRO mit Bluetooth) werden hier ebenfalls gefunden – je Tanksensor eine Kachel mit Füllstand und Temperatur. Ungetestet: bitte Rückmeldung, ob die Werte stimmen. Die SuperSense-App dabei schließen.", "<b>Beta:</b> SuperSense tank modules (name “SSBT…”, up to 4 tank sensors, also SuperSense PRO with Bluetooth) are found here too – one tile per tank sensor with level and temperature. Untested: please report whether the values are correct. Close the SuperSense app meanwhile."],
-["'SuperSense Tankmodul (Beta)'", "'SuperSense tank module (beta)'"]
+["'SuperSense Tankmodul (Beta)'", "'SuperSense tank module (beta)'"],
+["<h2>Sensoren per Bluetooth</h2>", "<h2>Sensors via Bluetooth</h2>"],
+["<h2>Dieselheizung und Kühlbox per Bluetooth</h2>", "<h2>Diesel heater and cool box via Bluetooth</h2>"],
+["Ruuvi, SwitchBot (Meter, Meter Plus, Outdoor), BTHome (Shelly BLU, Xiaomi mit pvvx-Firmware …), Simarine STRx und SuperSense-Tankmodul (Beta). Die Sensoren senden nur, das Display hört zu. Verschlüsselte BTHome- und Simarine-Sensoren: Schlüssel (32 Zeichen) als PIN / Passwort eintragen.", "Ruuvi, SwitchBot (Meter, Meter Plus, Outdoor), BTHome (Shelly BLU, Xiaomi with pvvx firmware …), Simarine STRx and SuperSense tank module (beta). The sensors only broadcast, the display listens. Encrypted BTHome and Simarine sensors: enter the key (32 characters) as PIN / password."],
+["China-Dieselheizungen (Vevor, Hcalory, HeaterCC/AirHeater) und Kompressor-Kühlboxen (Alpicool, IceCube/Plug-in Festivals, Bodega, Brass Monkey) – Beta, ungetestet. Ein/Aus und Stufe/Soll direkt hier. Die App des Herstellers vorher schließen.", "Chinese diesel heaters (Vevor, Hcalory, HeaterCC/AirHeater) and compressor cool boxes (Alpicool, IceCube/Plug-in Festivals, Bodega, Brass Monkey) – beta, untested. On/off and level/set point right here. Close the manufacturer’s app first."],
+["'Heizung/Kühlbox suchen'", "'Search heater/cool box'"],
+[">Heizung/Kühlbox suchen<", ">Search heater/cool box<"],
+["Noch keine Heizung oder Kühlbox eingerichtet.", "No heater or cool box set up yet."],
+["Noch nichts gefunden … Sensor in der Nähe?", "Nothing found yet … sensor nearby?"],
+["Noch nichts gefunden … Gerät eingeschaltet und in der Nähe?", "Nothing found yet … device switched on and nearby?"],
+["31:'Dieselheizung',32:'Kühlbox'", "31:'Diesel heater',32:'Cool box'"]
 ]

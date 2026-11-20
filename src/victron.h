@@ -105,8 +105,11 @@ uint32_t victron_version();                        // aendert sich bei neuen Wer
 bool victron_has_devices();
 // Auch die Werte des Cerbo GX ("cerbo:...") laufen als Victron-Kacheln
 // "bms:<mac>": Akku mit eigenem BMS (bms.cpp) – erscheint im Panel wie ein Batteriewaechter (VIC_SHUNT)
+// "satshunt:<satellit>": SmartShunt-Satellit (sat_shunt.cpp) – Batteriewaechter-Kachel aus seinen Punkten (panelsat.cpp)
+#define SATSHUNT_KEY_PREFIX "satshunt:"
 static inline bool victron_is_key(const std::string &k) {
-  return k.rfind(VICTRON_KEY_PREFIX, 0) == 0 || k.rfind("cerbo:", 0) == 0 || k.rfind("bms:", 0) == 0;
+  return k.rfind(VICTRON_KEY_PREFIX, 0) == 0 || k.rfind("cerbo:", 0) == 0 || k.rfind("bms:", 0) == 0 ||
+         k.rfind(SATSHUNT_KEY_PREFIX, 0) == 0 || k == "hobby:bat";   // Hobby-Bordbatterie (hobby.cpp)
 }
 
 // Vom Bluetooth-Scan (truma.cpp) fuer jedes Paket mit Hersteller-ID 0x02E1 aufgerufen.

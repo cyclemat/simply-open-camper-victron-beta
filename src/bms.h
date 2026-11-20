@@ -116,7 +116,15 @@
 #endif
 #define BMS_TANKS 4   // Kanaele je SuperSense-Tankmodul
 
+// Hoechstzahl eingerichteter Geraete (Akkus, Power Stations, Sensoren, Heizung, Kuehlbox zusammen). Sensoren
+// verbinden sich nicht und kosten kaum Speicher; das kleine Victron-Display (ohne PSRAM) bleibt bei 6.
+#ifndef BMS_MAX
+#if PANEL_SATELLITE
 #define BMS_MAX 6
+#else
+#define BMS_MAX 12
+#endif
+#endif
 #define BMS_KEY_PREFIX "bms:"
 
 enum BmsModel : uint8_t {
@@ -148,6 +156,10 @@ enum BmsDev : uint8_t {
   BMS_DEV_FRIDGE = 9    // Kuehlbox: fr_*, volt = Versorgung, soc = Akku %
 };
 BmsDev bms_dev_of(BmsModel m);
+// Rubrik in den Einstellungen/Weboberflaechen: Akkus (inkl. Shunt, Renogy-Laderegler …), Power Stations, Sensoren
+// (Klima, Tank, BTHome), Dieselheizung/Kuehlbox (unter Gas/Heizung)
+enum BmsCat : uint8_t { BMS_CAT_BAT = 0, BMS_CAT_PS = 1, BMS_CAT_SENSOR = 2, BMS_CAT_HEAT = 3 };
+BmsCat bms_cat_of(BmsModel m);
 // Abgleich/Erweiterung nach patman15/aiobmsble (Apache-2.0): Daly-Varianten und -Erkennung, JK-Aufbau nach
 // Firmware-Version, LiTime/Redodo-Hersteller-ID 0x585A, Renogy (BT-TH-…), Eco-Worthy (ECO-WORTHY…/DCHOUSE…).
 

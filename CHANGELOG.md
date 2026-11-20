@@ -2,10 +2,7 @@
 
 Neueste Version oben. *Beta* = eingebaut, aber noch nicht an echter Hardware getestet – Rückmeldungen willkommen.
 
-## 0.2.5 – 2026-11-20 (Waveshare 7")
-
-Diese Version gibt es vorerst nur für das **Waveshare 7"**. Das CYD 2,8" bleibt bei 0.2.4; die Punkte zu den
-Sensor-/Heizungs-Karten und Namen in der Suchliste kommen dort mit dem nächsten CYD-Update.
+## 0.2.5 – 2026-11-20
 
 **Neu**
 - 🏕️ **Hobby** *(Beta, nur Waveshare 7")* – Wohnwagen/Reisemobile von Hobby: über die HobbyConnect-Box per Bluetooth
