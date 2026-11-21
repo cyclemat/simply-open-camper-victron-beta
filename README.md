@@ -1,3 +1,10 @@
+> [!TIP]
+> **🚐 Das komplette Projekt / the full project:** Dieses Victron-Display ist ein Teil von **Simple Open Camper** – mit
+> Touch-Panels (7" ESP32-P4 und Waveshare, rundes 1,46"-Panel), Satelliten, Zigbee, Regeln, Tailscale und der
+> Android-App „S.O.C. Live“. This Victron display is part of Simple Open Camper – panels, satellites, Zigbee, rules,
+> Tailscale and the Android app:
+> **[github.com/cyclemat/simple-open-camper](https://github.com/cyclemat/simple-open-camper)**
+
 <p align="center">
   <img src="assets/banner_small.jpg" alt="Simple Open Camper (S.O.C.)" width="100%">
 </p>
