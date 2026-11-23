@@ -326,6 +326,13 @@ ab Werk `000000`, bei neueren Geräten steht sie auf dem Aufkleber. Eintragen: W
 Bluetooth** → Knopf **PIN** (Waveshare 7": Knopf „PIN“ im Kachelfenster). Die VictronConnect-App vorher trennen – der
 Orion spricht nur mit einem Gerät.
 
+> **Schlüssel ≠ PIN** – zwei verschiedene Dinge:
+> - **Schlüssel** (Instant Readout, 32 Zeichen): nur zum **Lesen** der Werte aus den Funkpaketen, ganz ohne Verbindung.
+>   Den braucht jedes Victron-Gerät.
+> - **PIN** (6 Ziffern, Bluetooth-Kopplung): nur zum **Schalten**, denn Victron nimmt Befehle nur über eine echte
+>   Verbindung an. Ab Werk `000000` – die nimmt das Display von selbst. Nur eintragen, wenn in VictronConnect eine
+>   eigene PIN vergeben wurde (**Produktinfo → Bluetooth → PIN**).
+
 **Über den Cerbo GX** (Orion per VE.Direct am GX): Ein/Aus, sobald der GX für den DC-DC-Lader einen Schalter meldet.
 
 Die **Notfall-Rückladung** (Starterbatterie aus der Bordbatterie) des Orion XS lässt sich nur in VictronConnect starten –
@@ -422,7 +429,9 @@ bleibt das Log auch über einen Absturz oder Neustart hinweg erhalten; Waveshare
 from a Cerbo GX via WiFi (MQTT on LAN, auto-discovery, optional), from Victron devices via Bluetooth (Instant
 Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense and Simarine STRx tank sensors (open or with the sensor's own key, no app key needed), Ruuvi and SwitchBot climate sensors as untested beta. Tap a
 tile to set the MultiPlus input current limit and mode; Orion XS/Smart can be switched on/off and their maximum charging
-current set (beta, via Bluetooth with the VictronConnect PIN, default 000000, or on/off via the Cerbo GX). Setup: join WiFi `SOC-Victron-XXXXXX` (default password
+current set (beta, via Bluetooth with the VictronConnect PIN, default 000000, or on/off via the Cerbo GX). Note: the
+Instant Readout key only reads values; switching needs the Bluetooth pairing PIN (only enter it if you changed it in
+VictronConnect). Setup: join WiFi `SOC-Victron-XXXXXX` (default password
 `panelsat`), the setup page opens automatically (captive portal, http://4.3.2.1/), set your own access password
 (web UI), then your WiFi. The setup WiFi password is separate (default `panelsat`, can be changed or switched off).
 Emergency: power-cycle 3× quickly = setup WiFi on, 5× = reset WiFi and both passwords. Build with
