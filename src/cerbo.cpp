@@ -75,6 +75,7 @@ static const char *SUBS[] = {
     "digitalinput/+/ProductName",
     // DC-DC-Lader (Orion XS, Orion Smart am GX) und Lichtmaschinenregler: je Geraet eine Kachel "cerbo:dcdc<n>"
     "dcdc/+/State",
+    "dcdc/+/Mode",
     "dcdc/+/Dc/#",
     "dcdc/+/CustomName",
     "dcdc/+/ProductName",
@@ -93,6 +94,7 @@ static const int ALT_OFFSET = 1000;
 struct Dcdc {
   float in_v = NAN, in_i = NAN, in_p = NAN, out_v = NAN, out_i = NAN, out_p = NAN;
   int state = -1;
+  int mode = -1;      // Schalter (Orion XS am GX): 1 an, 4 aus; -1 = meldet keinen
   bool alt = false;   // Lichtmaschinenregler (Dienst alternator)
   std::string custom, product;
 };
@@ -378,6 +380,7 @@ static void handle(const std::string &topic, const char *payload, size_t len) {
     Dcdc &x = d.dcdc[inst + (alt ? ALT_OFFSET : 0)];
     x.alt = alt;
     if (path == "State") x.state = to_int(v);
+    else if (path == "Mode") x.mode = to_int(v);
     else if (path == "Dc/0/Voltage") x.out_v = v;
     else if (path == "Dc/0/Current") x.out_i = v;
     else if (path == "Dc/0/Power") x.out_p = v;
@@ -813,6 +816,11 @@ static bool dcdc_tile(int id, VictronInfo &v) {
   v.bat_i = !isnan(x.out_i) ? x.out_i : (!isnan(x.out_p) && !isnan(x.out_v) && x.out_v > 1) ? x.out_p / x.out_v : NAN;
   v.power_w = !isnan(x.out_p) ? x.out_p : (!isnan(x.out_v) && !isnan(x.out_i)) ? x.out_v * x.out_i : NAN;
   v.state = x.state;
+  if (x.mode >= 0 && !x.alt) {   // DC-DC-Lader meldet einen Schalter: ueber den GX ein-/ausschaltbar
+    v.can_mode = true;
+    v.mode_set = 1;
+    v.mode = (x.mode == 0 || x.mode == 4) ? 4 : 1;
+  }
   return true;
 }
 
@@ -899,6 +907,18 @@ bool cerbo_set_limit(const std::string &key, float amps) {
 }
 
 bool cerbo_set_mode(const std::string &key, int mode) {
+  if (cerbo_is_key(key) && key.compare(strlen(CERBO_KEY_PREFIX), strlen(DCDC_PREFIX), DCDC_PREFIX) == 0) {
+    int id = atoi(key.c_str() + strlen(CERBO_KEY_PREFIX) + strlen(DCDC_PREFIX));
+    if ((mode != 1 && mode != 4) || id >= ALT_OFFSET) return false;
+    {
+      Lock l;
+      auto it = s_d.dcdc.find(id);
+      if (it == s_d.dcdc.end() || it->second.mode < 0) return false;
+      it->second.mode = mode;   // gleich anzeigen, der GX bestaetigt
+      s_ver++;
+    }
+    return queue_write("dcdc/" + std::to_string(id) + "/Mode", std::to_string(mode));
+  }
   int t;
   if (!tile_of(key, t)) return false;
   std::string path;

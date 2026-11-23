@@ -1,6 +1,7 @@
 #include "victron.h"
 #include "cerbo.h"
 #include "bms.h"
+#include "victron_ctl.h"
 #include "i18n/i18n.h"
 
 #include <Arduino.h>
@@ -394,6 +395,7 @@ static VictronInfo info_of(const VicDev &d) {
   v.mac = d.mac;
   v.name = d.name;
   v.age_s = d.when_ms ? (int32_t)((millis() - d.when_ms) / 1000) : -1;
+  vctl_fill(v);   // Orion: per Bluetooth schaltbar (victron_ctl.cpp, nur Panels)
   return v;
 }
 

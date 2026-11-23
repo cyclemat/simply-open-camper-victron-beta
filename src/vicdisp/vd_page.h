@@ -140,6 +140,12 @@ button.p{background:var(--ac);border-color:var(--ac);color:#fff}button.d{color:v
 <div class="row" style="margin-top:8px"><button id="bDpSave" style="flex:none">Speichern</button><button id="bTcal" style="flex:none">Touch kalibrieren</button></div>
 <p class="hint">Kalibrieren: auf dem Display nacheinander die vier Pfeilspitzen antippen. Geht auch ohne Browser: beim Einschalten 2 Sekunden auf den Bildschirm drücken.</p></div>
 
+<div class="card" id="dbCard" style="display:none"><h2>Fehlersuche (Debug-Log)</h2>
+<label class="ck"><input type="checkbox" id="dbOn">Debug-Log mitschreiben</label>
+<p class="hint" id="dbInfo"></p>
+<div class="row" id="dbBtns" style="display:none"><button id="bDbView" style="flex:none">Log ansehen</button><a href="/api/dbglog?ring=1" download="log-arbeitsspeicher.txt" style="align-self:center">Arbeitsspeicher herunterladen</a></div>
+<pre id="dbPre" class="mono" style="display:none;max-height:50vh;overflow:auto;font-size:11px;line-height:1.35;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0"></pre>
+<div id="dbFiles"></div></div>
 <div class="card"><h2>Firmware</h2>
 <p class="hint" id="fwInfo"></p>
 <p class="hint">Update: „Update-Modus starten“ – das Display startet in den kleinen Updater (gleiche Adresse, gleiches
@@ -211,7 +217,7 @@ function render(){
  const V=S.victron;
  $('#viList').innerHTML=V.devices.length?V.devices.map(x=>`<div class="dev"><div class="t"><input value="${esc(x.name)}" data-vin="${x.mac}" maxlength="32">
   <div class="v">${esc(x.kind_text)} · ${x.has?[x.pv!=null?num(x.pv,0,'W'):'',x.soc!=null?num(x.soc,0,'%'):'',num(x.v,2,'V'),num(x.i,1,'A'),x.state_text||''].filter(Boolean).join(' · '):esc(x.status)} · <span class="mono">${x.mac}</span></div></div>
-  <button data-vik="${x.mac}">Schlüssel</button><button class="d" data-vir="${x.mac}">Entfernen</button></div>`).join(''):'<p class="hint">Noch kein Gerät eingerichtet.</p>';
+  ${x.pin!=null?`<button data-vip="${x.mac}" data-pin="${x.pin}">PIN</button>`:''}<button data-vik="${x.mac}">Schlüssel</button><button class="d" data-vir="${x.mac}">Entfernen</button></div>`).join(''):'<p class="hint">Noch kein Gerät eingerichtet.</p>';
  $('#bViScan').disabled=V.scanning||V.devices.length>=V.max;$('#bViScan').textContent=V.scanning?'Suche läuft …':'Geräte suchen';
  $('#viFound').innerHTML=V.scanning||V.found.length?'<h2 style="margin-top:12px">Gefunden</h2>'+(V.found.length?V.found.map((f,i)=>`<div class="dev"><div class="t">${esc(f.name||'Victron')} <span class="mono">${f.mac}</span><div class="v">Signal ${sig(f.rssi)}${f.configured?', eingerichtet':''}</div></div><button data-via="${i}" ${f.configured?'disabled':''}>Hinzufügen</button></div>`).join(''):'<p class="hint">Noch nichts gefunden …</p>'):'';
 }
@@ -248,13 +254,25 @@ $('#bAuth').onclick=async()=>{try{
  $('#authCard').style.display='none';loaded=false;load();dpLoad()}catch(e){toast(e.message,true)}};
 $('#bPw').onclick=async()=>{const o=prompt('Aktuelles Zugangspasswort');if(o==null)return;const n=prompt('Neues Passwort (mindestens 8 Zeichen)');if(!n)return;if(prompt('Neues Passwort wiederholen')!==n)return toast('Nicht gleich.',true);
  try{await post('/api/setpw',{old:o,new:n});toast('Passwort geändert.')}catch(e){toast(e.message,true)}};
+let DB=null,dbT=null;
+async function dbLoad(){try{const r=await fetch('/api/dbglog');if(!r.ok)return;DB=await r.json();$('#dbCard').style.display='';dbRender()}catch(e){}}
+function dbKB(n){return n<1024?n+' B':(n/1024).toFixed(n<10240?1:0)+' KB'}
+function dbRender(){$('#dbOn').checked=DB.on;
+ $('#dbInfo').textContent=(DB.files_ok?'Dateien auf der SD-Karte (Ordner logs, je bis 1 MB, die letzten 10). ':DB.sd?'Keine SD-Karte gefunden – nur die letzten '+DB.ring_kb+' KB im Arbeitsspeicher. ':'Die letzten '+DB.ring_kb+' KB im Arbeitsspeicher. ')+'Alle Meldungen mit Uhrzeit, alle 60 s Speicher und WLAN. Ab Werk aus – nur zur Fehlersuche einschalten.';
+ $('#dbBtns').style.display=DB.on?'':'none';
+ $('#dbFiles').innerHTML=(DB.files||[]).slice().reverse().map(f=>`<div class="row" style="align-items:center"><span class="mono" style="flex:1">${f.name} · ${dbKB(f.size)}${f.name===DB.current?' · läuft':''}</span><a href="/api/dbglog?file=${f.name}" download="${f.name}">Herunterladen</a>${f.name===DB.current?'':`<button class="s" data-dbdel="${f.name}" style="flex:none">Löschen</button>`}</div>`).join('')}
+$('#dbOn').onchange=()=>post('/api/dbglog',{on:$('#dbOn').checked}).then(()=>{toast($('#dbOn').checked?'Debug-Log läuft.':'Debug-Log ist aus.');dbLoad()}).catch(e=>toast(e.message,true));
+$('#bDbView').onclick=()=>{const p=$('#dbPre');if(p.style.display===''){p.style.display='none';clearTimeout(dbT);$('#bDbView').textContent='Log ansehen';return}
+ p.style.display='';$('#bDbView').textContent='Log ausblenden';
+ const ld=async()=>{try{const t=await (await fetch('/api/dbglog?ring=1')).text();const end=p.scrollTop+p.clientHeight>=p.scrollHeight-30;p.textContent=t||'Noch nichts mitgeschrieben.';if(end)p.scrollTop=p.scrollHeight}catch(e){}if(p.style.display==='')dbT=setTimeout(ld,2000)};ld()};
+$('#dbFiles').onclick=e=>{const b=e.target.closest('[data-dbdel]');if(!b||!confirm('Datei '+b.dataset.dbdel+' löschen?'))return;post('/api/dbglog',{delete:b.dataset.dbdel}).then(dbLoad).catch(er=>toast(er.message,true))};
 async function apLoad(){try{const r=await fetch('/api/appw');if(!r.ok)return;const j=await r.json();$('#apOn').checked=j.on;apShow();document.querySelectorAll('.apSsid').forEach(e=>e.textContent=j.ssid||'…');$('#apPw').placeholder=j.custom?'unverändert':'unverändert (panelsat)'}catch(e){}}
 function apShow(){$('#apPwRow').style.display=$('#apOn').checked?'':'none';$('#apOpenHint').style.display=$('#apOn').checked?'none':''}
 $('#apOn').onchange=apShow;
 $('#bApSave').onclick=()=>{const pw=$('#apPw').value;if($('#apOn').checked&&pw&&pw.length<8)return toast('Das WLAN-Passwort braucht mindestens 8 Zeichen.',true);
  post('/api/appw',{on:$('#apOn').checked,pw:pw}).then(()=>{$('#apPw').value='';toast('Gespeichert – das Einrichtungs-WLAN startet gleich mit der neuen Einstellung neu.');apLoad()}).catch(e=>toast(e.message,true))};
 async function load(){try{const r=await fetch('/api/state');if(r.status===401){const j=await r.json();if(AUTH!==j.auth)showAuth(j.auth);return}
- AUTH=null;$('#authCard').style.display='none';$('#app').style.display='';S=await r.json();if(!loaded){fill();apLoad();loaded=true}render();renderCtl();ledShow();ldrShow()}catch(e){$('#hSub').textContent='Keine Verbindung zum Display …'}}
+ AUTH=null;$('#authCard').style.display='none';$('#app').style.display='';S=await r.json();if(!loaded){fill();apLoad();dbLoad();loaded=true}render();renderCtl();ledShow();ldrShow()}catch(e){$('#hSub').textContent='Keine Verbindung zum Display …'}}
 $('#bScanW').onclick=async()=>{$('#bScanW').disabled=true;$('#bScanW').textContent='Suche …';try{const r=await fetch('/api/wifiscan');const j=await r.json();if(!r.ok)throw new Error(j.error||'Suche fehlgeschlagen');
  $('#netList').innerHTML=j.networks.length?j.networks.map((n,i)=>`<div class="dev"><div class="t">${esc(n.ssid)}<div class="v">Signal ${sig(n.rssi)}${n.open?' · offen':''}</div></div><button data-net="${i}" style="flex:none">Wählen</button></div>`).join(''):'<p class="hint">Keine Netze gefunden.</p>';
  $('#netList')._n=j.networks}catch(e){toast(e.message,true)}$('#bScanW').disabled=false;$('#bScanW').textContent='Netze suchen'};
@@ -294,6 +312,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
  if(d.bmf)act('/api/bms',{fridge:{mac:d.bmf,what:+d.w,value:+d.v}},'Gesendet.');
  if(d.bma)bmAddDlg(S.bms.found[+d.bma]);
  if(d.tra){const f=S.truma.found[+d.tra];const n=prompt('Name, z. B. „Flasche links“','Gasflasche '+(S.truma.sensors.length+1));if(n!=null)act('/api/truma',{add:{mac:f.mac,addr_type:f.addr_type,name:n}},'Eingerichtet.')}
+ if(d.vip){const p=prompt('PIN aus VictronConnect zum Schalten (ab Werk 000000)',d.pin||'000000');if(p!==null)act('/api/victron',{pin:{mac:d.vip,pin:p.trim()}},'PIN gespeichert.')}
  if(d.vik){const k=prompt('Schlüssel (32 Zeichen)');if(k)act('/api/victron',{key:{mac:d.vik,key:k.replace(/[\s:-]/g,'')}},'Schlüssel gespeichert.')}
  if(d.via){const f=S.victron.found[+d.via];const k=prompt('Schlüssel (32 Zeichen) für '+(f.name||f.mac));if(k){const n=prompt('Name',f.name||'Victron');act('/api/victron',{add:{mac:f.mac,key:k.replace(/[\s:-]/g,''),name:n||''}},'Eingerichtet.')}}
 });

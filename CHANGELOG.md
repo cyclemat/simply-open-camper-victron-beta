@@ -1,6 +1,21 @@
-# Changelog – Victron-Display
+# Changelog – Simple Open Camper Victron Edition
 
 Neueste Version oben. *Beta* = eingebaut, aber noch nicht an echter Hardware getestet – Rückmeldungen willkommen.
+
+## 0.2.7 – 2026-11-23
+
+**Neu**
+- 🏷️ **Neuer Name: „Simple Open Camper – Victron Edition“** (vorher „Victron-Display (Beta)“) – für das CYD 2,8" und
+  das Waveshare 7". Das Repository und die Adresse des Web-Flashers bleiben gleich.
+- 🔌 **Orion XS / Orion Smart bedienen** *(Beta, ungetestet)* – Kachel 2 s drücken (Waveshare 7": antippen): **Ein/Aus**
+  und **Ladestrom (max.)** mit − / +. Per Bluetooth direkt (kurze Verbindung mit der PIN aus VictronConnect, ab Werk
+  000000 – Knopf „PIN“ bei Victron per Bluetooth) oder über den Cerbo GX (Ein/Aus des DC-DC-Laders). Die
+  Notfall-Rückladung geht weiter nur in VictronConnect.
+- 📱 Waveshare 7": **Live-Ansicht** im Browser (`http://<display>/live`) – Kacheln am Handy oder PC bedienen.
+- 🐞 Waveshare 7": Debug-Log auch am Bildschirm schaltbar (Einstellungen → Info).
+- 🐞 **Debug-Log (Fehlersuche)** – Karte „Fehlersuche (Debug-Log)“ in der Weboberfläche, ab Werk aus: alle Meldungen
+  mit Uhrzeit, alle 60 s Speicher und WLAN, Grund des letzten Neustarts. Mit microSD-Karte im CYD als Dateien
+  (Ordner `logs`), sonst die letzten 8 KB im Arbeitsspeicher; ansehen, herunterladen, löschen im Browser.
 
 ## 0.2.5 – 2026-11-20
 

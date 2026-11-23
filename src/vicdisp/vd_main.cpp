@@ -21,6 +21,7 @@
 #include "../i18n/i18n.h"
 #include "../cerbo.h"
 #include "../victron.h"
+#include "../victron_ctl.h"
 #include "../truma.h"
 #include "../mopeka.h"
 #include "../sat/sat_display.h"
@@ -29,6 +30,7 @@
 #include "../bms.h"
 
 #include "../soc_version.h"
+#include "../dbglog.h"
 #define VD_FW_VERSION SOC_VERSION   // gemeinsame Versionsnummer (soc_version.h)
 
 static const uint32_t AP_AFTER_MS = 30000;   // so lange ohne WLAN: Einrichtungs-WLAN dazuschalten
@@ -469,6 +471,7 @@ void h_state() {
     o["mac"] = v.mac;
     o["name"] = v.name;
     o["kind_text"] = tr(victron_kind_text(v.kind));
+    if (vctl_supported(v.record)) o["pin"] = vctl_pin(v.mac);   // Orion: per Bluetooth schaltbar
     o["has"] = v.has;
     o["age"] = v.age_s;
     o["status"] = tr_parts(v.status);
@@ -591,6 +594,13 @@ void h_victron() {
   }
   if (d["remove"].is<const char *>()) victron_remove(d["remove"].as<const char *>());
   if (!d["rename"].isNull()) victron_rename(d["rename"]["mac"] | "", d["rename"]["name"] | "");
+  if (!d["pin"].isNull()) {   // {"pin":{mac,pin}}: PIN aus VictronConnect zum Schalten (Orion)
+    std::string pin = d["pin"]["pin"] | "";
+    for (char ch : pin)
+      if (ch < '0' || ch > '9') return send_err(tr("Die PIN besteht nur aus Ziffern"));
+    if (pin.size() > 6) return send_err(tr("Die PIN hat höchstens 6 Ziffern"));
+    vctl_set_pin(d["pin"]["mac"] | "", pin);
+  }
   send_ok();
 }
 
@@ -760,6 +770,12 @@ void setup() {
            (unsigned)(mac >> 40) & 0xFF);
   s_id = id;
   load_cfg();
+  // Debug-Log (ab Werk aus, Weboberflaeche: Fehlersuche): 8 KB im RAM, Dateien auf der microSD-Karte des CYD
+#if DBGLOG_CYD_SD
+  dbglog_begin(8 * 1024, dbglog_cyd_sd);
+#else
+  dbglog_begin(8 * 1024);
+#endif
   devsetup::Boot boot = devsetup::boot_check();   // zuerst: Mehrfach-Reset erkennen
   if (boot.factory) {   // 5x: WLAN-Daten loeschen (Passwort setzt devsetup zurueck)
     s_cfg.ssid = "";

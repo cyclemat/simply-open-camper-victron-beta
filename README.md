@@ -1,31 +1,30 @@
 > [!TIP]
-> **🚐 Das komplette Projekt / the full project:** Dieses Victron-Display ist ein Teil von **Simple Open Camper** – mit
-> Touch-Panels (7" ESP32-P4 und Waveshare, rundes 1,46"-Panel), Satelliten, Zigbee, Regeln, Tailscale und der
-> Android-App „S.O.C. Live“. This Victron display is part of Simple Open Camper – panels, satellites, Zigbee, rules,
-> Tailscale and the Android app:
+> **🚐 Das komplette Projekt / the full project:** Die Victron Edition ist ein Teil von **Simple Open Camper** – mit
+> Touch-Panels (7" ESP32-P4 und Waveshare, rundes 1,46"-Panel), Satelliten, Zigbee, Regeln, Home Assistant, Tailscale
+> und der Android-App „S.O.C. Live“. The Victron Edition is part of Simple Open Camper – panels, satellites, Zigbee,
+> rules, Home Assistant, Tailscale and the Android app:
 > **[github.com/cyclemat/simple-open-camper](https://github.com/cyclemat/simple-open-camper)**
 
 <p align="center">
   <img src="assets/banner_small.jpg" alt="Simple Open Camper (S.O.C.)" width="100%">
 </p>
 
-<h1 align="center"><img src="assets/van-right.svg" height="32" alt=""> Simple Open Camper – Victron-Display <img src="assets/van-left.svg" height="32" alt=""></h1>
+<h1 align="center"><img src="assets/van-right.svg" height="32" alt=""> Simple Open Camper – Victron Edition <img src="assets/van-left.svg" height="32" alt=""></h1>
 
-<h3 align="center">Victron und Gas im Camper auf einem 2,8"-Touch-Display – Cerbo GX per WLAN, Victron-Geräte, Truma LevelControl und Mopeka direkt per Bluetooth. Lokal, ohne Cloud.</h3>
+<h3 align="center">Victron, Gas und Akkus im Camper – auf dem 2,8"-Touch-Display (CYD) oder dem 7"-Waveshare. Cerbo GX per WLAN, Victron-Geräte, Gas und Akkus direkt per Bluetooth. Lokal, ohne Cloud.</h3>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Hardware-ESP32--2432S028R%20(CYD)-0089D0" alt="Hardware">
-  <img src="https://img.shields.io/badge/Display-320%C3%97240%20Touch-blue" alt="Display">
+  <img src="https://img.shields.io/badge/Hardware-CYD%202%2C8%22%20%7C%20Waveshare%207%22-0089D0" alt="Hardware">
   <img src="https://img.shields.io/badge/Victron-Cerbo%20GX%20%7C%20Instant%20Readout-005CA9" alt="Victron">
   <img src="https://img.shields.io/badge/Gas-Truma%20LevelControl-E30613" alt="Truma LevelControl">
   <img src="https://img.shields.io/badge/Gas-Mopeka-2E7D32" alt="Mopeka">
   <img src="https://img.shields.io/badge/Cloud-keine-brightgreen" alt="Ohne Cloud">
   <img src="https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial-blue" alt="Lizenz PolyForm Noncommercial">
-  <img src="https://img.shields.io/badge/Status-Beta-yellow" alt="Status">
+  <img src="https://img.shields.io/badge/Version-0.2.7-F3A43B" alt="Version">
 </p>
 
-> Die abgespeckte Version von Simple Open Camper (S.O.C.) für alle,
-> die **nur Victron und den Gasvorrat** sehen und bedienen wollen – auf einem Display für rund 15 €, ohne großes Panel.
+> Die schlanke Ausgabe von Simple Open Camper (S.O.C.) für alle, die **Victron, Gas und Akkus** sehen und bedienen
+> wollen – auf dem kleinen 2,8"-Display für rund 15 € oder auf dem 7"-Waveshare mit Einstellungen direkt am Bildschirm.
 
 <p align="center">
   <img src="assets/victron_preview.png" alt="Vorschau: zwei Seiten mit je vier Kacheln (Batterie, Solar, MultiPlus, Gas, Booster, Landstrom, Ladegerät)" width="100%">
@@ -37,10 +36,20 @@
 
 ---
 
-## 🚧 Beta
+## ℹ️ Stand
 
-Die Firmware läuft auf dem Board. **Noch nicht an jeder Anlage getestet** sind: Cerbo GX mit vielen Geräten,
-MultiPlus-Steuerung (Strombegrenzung/Schalter) und Bluetooth-Ladegeräte. Rückmeldungen und Fotos willkommen!
+Die Victron Edition gibt es für **zwei Geräte** – gleiche Funktionen, verschiedene Größe:
+
+| | 📟 **CYD 2,8"** | 🖥️ **Waveshare 7"** |
+|---|---|---|
+| Board | ESP32-2432S028R („Cheap Yellow Display“), 320×240, resistiver Touch | Waveshare ESP32-S3 Touch-LCD 7", 1024×600, Multitouch |
+| Einrichten | Weboberfläche im Browser | direkt am Bildschirm, Feinschliff im Browser-Editor |
+| Sprache | Deutsch oder Englisch | Deutsch |
+| Extras | Ampel-LED, Lichtsensor | Shelly über MQTT, eingebauter MQTT-Broker, Hobby-Wohnwagen, Live-Ansicht im Browser |
+| Bezugsquelle | [bei Amazon](https://link.amazon/B00jjmvuF) | [bei Amazon](https://www.amazon.de/dp/B0FDQXKFJ5) |
+
+Beide laufen. Funktionen mit *(Beta)* sind eingebaut, aber **noch nicht an echter Hardware getestet** –
+Rückmeldungen und Fotos sind sehr willkommen (siehe [Fehler und Wünsche](#-fehler-und-wünsche)).
 
 ## ✨ Was es kann
 
@@ -62,16 +71,18 @@ MultiPlus-Steuerung (Strombegrenzung/Schalter) und Bluetooth-Ladegeräte. Rückm
 | ☀️ **Renogy per Bluetooth** | Laderegler (Rover/Wanderer/Adventurer mit BT-1/BT-2), DC-DC-Lader, Wechselrichter, Smart Shunt 300 – Solarleistung, Ladephase, Ertrag, Batterie – nur lesen |
 | 🔌 **Power Stations** (ungetestet) | Bluetti, Allpowers, Anker SOLIX, EcoFlow: Ladezustand, Leistung rein/raus – AC- und DC-Ausgang schaltbar |
 | 🎛️ **MultiPlus steuern** | Netzstrom-Begrenzung (− / +) und Schalter (Ein, Aus, Nur Laden, Nur Wechselrichter); eigenständige Ladegeräte: Begrenzung und Ein/Aus |
+| 🔌 **Orion bedienen** *(Beta)* | Orion XS / Orion Smart **ein- und ausschalten** und den **Ladestrom (max.)** einstellen – direkt per Bluetooth (PIN aus VictronConnect) oder über den Cerbo GX (Ein/Aus) – **ungetestet** |
 | 🧩 **Nur echte Werte** | Kacheln entstehen automatisch – nur für Geräte, die wirklich Werte liefern. Keine leeren Kacheln |
 | 🚦 **Ampel-LED** | Die RGB-LED auf der Rückseite zeigt Batterie oder Gas: bis 10 % rot, bis 50 % orange, darüber grün |
 | 👆 **Bedienung** | 4 oder 2 Kacheln pro Seite, Wischen zum Blättern, Antippen zum Bedienen, Dimmen nach Wunsch |
 | 🌐 **Weboberfläche** | WLAN, Cerbo, Bluetooth-Geräte, Reihenfolge und Namen der Kacheln, Helligkeit, Firmware-Update |
 | 🔒 **Sicher eingerichtet** | Einrichtungsseite öffnet sich von selbst (wie bei WLED), eigenes Zugangspasswort ist Pflicht |
 
-## 🔭 Vorgeschmack: das große Panel
+## 🚐 Das große Projekt: Simple Open Camper
 
-Dieses Display ist der kleine Bruder. Die **große Version von Simple Open Camper** ist ein 7"-Touch-Bedienteil
-für den ganzen Camper – **sie erscheint in ein paar Tagen**. Ein kleiner Ausblick:
+Die Victron Edition ist der kleine Bruder. Das **komplette Simple Open Camper** ist ein Touch-Bedienteil für den
+ganzen Camper und **jetzt öffentlich**: **[github.com/cyclemat/simple-open-camper](https://github.com/cyclemat/simple-open-camper)**
+– mit eigenem [⚡ Online-Flasher](https://cyclemat.github.io/simple-open-camper/flasher/).
 
 | | |
 |---|---|
@@ -83,12 +94,14 @@ für den ganzen Camper – **sie erscheint in ein paar Tagen**. Ein kleiner Ausb
 | 🔋 **Energie** | alles aus diesem Display – Victron, Cerbo GX, Akkus, Power Stations – und mehr |
 | 🛰️ **Satelliten** | kleine ESP32 im Fahrzeug für Tanksonden, Temperaturen, Relais, Wasserwaage; dazu Zusatzdisplays wie dieses |
 | 📡 **Lokal** | alles im eigenen WLAN, ohne Cloud – auf Wunsch mit eingebautem MQTT-Broker |
+| 🏠 **Home Assistant** | eigene Integration (HACS) und ESPHome-/Tasmota-Geräte per MQTT-Discovery |
+| 📲 **App** | „S.O.C. Live“ für Android – das Panel aufs Handy, mit eingebautem Tailscale auch von unterwegs |
 
-Wer hier mitliest, erfährt es zuerst. ⭐ Stern setzen oder das Repository beobachten.
+## 🏠 Home Assistant *(geplant)*
 
-## 🏠 Home Assistant *(in Arbeit)*
-
-Das Display braucht kein Home Assistant. Geplant ist, dass es auch mit HA zusammenarbeitet:
+Die Victron Edition braucht kein Home Assistant. Im großen Simple Open Camper gibt es die
+[Home-Assistant-Integration](https://github.com/cyclemat/simple-open-camper-HA-Integration) schon (Beta); für die
+Victron Edition ist geplant:
 
 - **Display → HA:** Das Display meldet seine **lokalen** Bluetooth-Geräte per MQTT-Discovery an Home Assistant –
   Gasflaschen (Truma LevelControl, Mopeka), Victron-Geräte per Bluetooth, Akkus und Power Stations, SuperSense.
@@ -100,7 +113,7 @@ Werte aus Home Assistant gehen nie zurück an HA, und Topics unter `homeassistan
 
 ## 🛒 Hardware
 
-Nur ein Board, keine Verkabelung: **ESP32-2432S028R** („Cheap Yellow Display“, CYD) – ESP32 mit 2,8"-Display
+**Klein: CYD 2,8".** Nur ein Board, keine Verkabelung: **ESP32-2432S028R** („Cheap Yellow Display“, CYD) – ESP32 mit 2,8"-Display
 320×240 und resistivem Touch, Micro-USB. Strom über USB (5 V) aus dem Bordnetz, z. B. mit einem USB-Einbau-Lader.
 
 👉 **Bezugsquelle:** [ESP32-2432S028R bei Amazon](https://link.amazon/B00jjmvuF)
@@ -113,9 +126,9 @@ Nur ein Board, keine Verkabelung: **ESP32-2432S028R** („Cheap Yellow Display�
 | RGB-LED | Rückseite, rot GPIO 4, grün GPIO 16, blau GPIO 17 (Low = an) – Ampel-Anzeige |
 | Lichtsensor | LDR vorne neben dem Display, GPIO 34 – automatische Helligkeit |
 
-### 🖥️ Großes Display: Waveshare 7" *(Beta)*
+### 🖥️ Groß: Waveshare 7"
 
-Das Victron-Display gibt es auch **groß**: auf dem **Waveshare ESP32-S3 Touch-LCD 7"** (1024×600, kapazitiver
+Die Victron Edition gibt es auch **groß**: auf dem **Waveshare ESP32-S3 Touch-LCD 7"** (1024×600, kapazitiver
 Multitouch, 8 MB PSRAM). Gleiche Geräte wie beim kleinen Display, aber mit **Einstellungen direkt am Bildschirm**:
 
 - WLAN wählen, Victron-Geräte und Akkus suchen, Cerbo GX finden, Gasflaschen einrichten – alles per Fingertipp
@@ -128,6 +141,8 @@ Multitouch, 8 MB PSRAM). Gleiche Geräte wie beim kleinen Display, aber mit **Ei
   Verdrahtung: Wandler **VCC an 3,3 V** (nicht 5 V), GND an GND, TXD des Wandlers an GPIO-RX, RXD an GPIO-TX;
   RS232-Seite an den Hobby-Kabelsatz „Bluetooth-Modul“. Kommt nichts an: RX/TX tauschen.
   **Niemals RS232 (±12 V) direkt an den ESP32!**
+- **Orion XS / Orion Smart bedienen** *(Beta)*: Kachel antippen → Ein/Aus und Ladestrom (max.), wie beim MultiPlus
+- **Live-Ansicht im Browser** (`http://<display>/live`): die Kacheln am Handy oder PC bedienen, mit Zugangspasswort
 - Kacheln erscheinen von selbst, sobald ein Gerät Werte liefert; Feinschliff (Seiten, Größen, Hintergründe) im
   Browser-Editor des Displays
 - vorerst **nur Deutsch** und **nur als fertige Firmware** (Web-Flasher: Gerät „Waveshare 7"“ wählen)
@@ -298,12 +313,30 @@ Kachel **Netz**, **Ladegerät** oder **Wechselrichter** **2 Sekunden gedrückt h
 Erscheint nur, wenn der GX den Wert liefert **und** als einstellbar meldet (z. B. nicht, wenn ein Digital
 Multi Control die Begrenzung festlegt). Dasselbe gibt es in der Weboberfläche beim Cerbo.
 
+### Orion XS / Orion Smart bedienen *(Beta, ungetestet)*
+
+Kachel des Orion **2 Sekunden gedrückt halten** (Waveshare 7": antippen) → Fenster mit
+
+- **Ladestrom (max.)**: − / + in ganzen Ampere (1–50 A), wird dauerhaft im Orion gespeichert – wie in VictronConnect,
+- **Schalter**: Ein / Aus.
+
+**Per Bluetooth** (Orion als Victron-Gerät eingerichtet): Das Display verbindet sich dafür kurz mit dem Orion, schaltet
+und trennt wieder; die Werte kommen weiter über „Instant Readout“. Dafür braucht es die **PIN aus VictronConnect** –
+ab Werk `000000`, bei neueren Geräten steht sie auf dem Aufkleber. Eintragen: Weboberfläche bei **Victron per
+Bluetooth** → Knopf **PIN** (Waveshare 7": Knopf „PIN“ im Kachelfenster). Die VictronConnect-App vorher trennen – der
+Orion spricht nur mit einem Gerät.
+
+**Über den Cerbo GX** (Orion per VE.Direct am GX): Ein/Aus, sobald der GX für den DC-DC-Lader einen Schalter meldet.
+
+Die **Notfall-Rückladung** (Starterbatterie aus der Bordbatterie) des Orion XS lässt sich nur in VictronConnect starten –
+Victron hat dafür keinen Befehl veröffentlicht.
+
 ## 👆 Bedienung am Display
 
 | Geste | Wirkung |
 |---|---|
 | Wischen links/rechts | nächste/vorige Seite (Punkte unten zeigen die Seite) |
-| Kachel 2 s gedrückt halten | MultiPlus/Ladegerät bedienen (wo möglich), Akku: Übersicht aller Werte |
+| Kachel 2 s gedrückt halten | MultiPlus/Ladegerät/Orion bedienen (wo möglich), Akku: Übersicht aller Werte |
 | Von oben nach unten wischen | Name, WLAN und Adresse der Weboberfläche groß anzeigen (antippen schließt) |
 | Berühren nach dem Dimmen | weckt nur auf |
 | Beim Einschalten **2 s** drücken, dann loslassen | **Touch kalibrieren** (vier Pfeilspitzen antippen) |
@@ -376,30 +409,35 @@ Was sich von Version zu Version geändert hat: **[CHANGELOG.md](CHANGELOG.md)**
 Bitte hier als [Issue](../../issues) melden. Der Code wird automatisch aktualisiert – Pull Requests werden deshalb
 nicht direkt übernommen, sondern von Hand eingearbeitet (siehe [CONTRIBUTING.md](CONTRIBUTING.md)).
 
+**Log für die Fehlermeldung:** In der Weboberfläche bei **„Fehlersuche (Debug-Log)“** einschalten (ab Werk aus), den
+Fehler nachstellen und das Log herunterladen – am besten an das Issue hängen. Mit microSD-Karte im CYD (Ordner `logs`)
+bleibt das Log auch über einen Absturz oder Neustart hinweg erhalten; Waveshare 7": Editor → Einstellungen → Info.
+
 ---
 
 <details>
 <summary>🇬🇧 English (short)</summary>
 
-Lean firmware for the ESP32-2432S028R "Cheap Yellow Display" ([buy on Amazon](https://link.amazon/B00jjmvuF)): shows all Victron values and gas levels as tiles –
+**Simple Open Camper – Victron Edition**: lean firmware for the ESP32-2432S028R "Cheap Yellow Display" ([buy on Amazon](https://link.amazon/B00jjmvuF)) and the Waveshare 7" – shows all Victron values, gas levels and batteries as tiles –
 from a Cerbo GX via WiFi (MQTT on LAN, auto-discovery, optional), from Victron devices via Bluetooth (Instant
 Readout) and from Truma LevelControl and Mopeka gas/tank sensors via Bluetooth; SuperSense and Simarine STRx tank sensors (open or with the sensor's own key, no app key needed), Ruuvi and SwitchBot climate sensors as untested beta. Tap a
-tile to set the MultiPlus input current limit and mode. Setup: join WiFi `SOC-Victron-XXXXXX` (default password
+tile to set the MultiPlus input current limit and mode; Orion XS/Smart can be switched on/off and their maximum charging
+current set (beta, via Bluetooth with the VictronConnect PIN, default 000000, or on/off via the Cerbo GX). Setup: join WiFi `SOC-Victron-XXXXXX` (default password
 `panelsat`), the setup page opens automatically (captive portal, http://4.3.2.1/), set your own access password
 (web UI), then your WiFi. The setup WiFi password is separate (default `panelsat`, can be changed or switched off).
 Emergency: power-cycle 3× quickly = setup WiFi on, 5× = reset WiFi and both passwords. Build with
-PlatformIO: `pio run -t upload` (German) or `pio run -e cyd-victron-en -t upload` (English). Beta.
+PlatformIO: `pio run -t upload` (German) or `pio run -e cyd-victron-en -t upload` (English).
 
-**Home Assistant (in progress):** the display will report its **local** Bluetooth devices to HA via MQTT discovery
+**Home Assistant (planned):** the display will report its **local** Bluetooth devices to HA via MQTT discovery
 and show HA values as tiles. No data loop: values it already receives via MQTT (Cerbo GX) are not reported, values
 from HA never go back to HA, topics below `homeassistant/` are never read as input.
 
-**Big display (beta):** the Victron display also runs on the **Waveshare ESP32-S3 Touch LCD 7"**
+**Big display:** the Victron Edition also runs on the **Waveshare ESP32-S3 Touch LCD 7"**
 ([Amazon](https://www.amazon.de/dp/B0FDQXKFJ5)) with settings right on the screen, Shelly support, a built-in
 MQTT broker and Hobby caravans/motorhomes (HobbyConnect box via Bluetooth or CI-BUS cable, beta) – German only for now, ready-made firmware via the web flasher (choose “Waveshare 7"”).
 
-**Coming soon:** the big brother – a 7" touch panel for the whole camper (Zigbee lights and switches, rules with
-graphical blocks, Truma/Alde heating, everything from this display and more) will be released in a few days.
+**The big brother is public:** [Simple Open Camper](https://github.com/cyclemat/simple-open-camper) – touch panels for
+the whole camper (Zigbee, rules, Truma/Alde heating, Home Assistant, app, everything from this edition and more).
 
 **Install from the browser:** [web flasher](https://cyclemat.github.io/simply-open-camper-victron-beta/) – choose **English**,
 click “Install”. Ready-made files: `release/victron-display-cyd-en.bin` (first install via USB, address 0x0, erases

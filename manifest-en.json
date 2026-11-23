@@ -1,6 +1,6 @@
 {
-  "name": "Victron display (Simple Open Camper, English)",
-  "version": "0.2.5",
+  "name": "Simple Open Camper – Victron Edition (CYD 2.8\", English)",
+  "version": "0.2.7",
   "new_install_prompt_erase": true,
   "builds": [
     {

@@ -6,6 +6,9 @@
 #include "truma_inetx.h"
 #include "hymer.h"
 #include "hobby.h"
+#include "votronic.h"
+#include "victron_ctl.h"
+#include "shelly_ble.h"
 #include "web_server.h"
 // Satelliten haben keinen Webserver: dort gilt dieser Ersatz (das Panel nimmt den aus webserver.cpp)
 __attribute__((weak)) bool web_busy() { return false; }
@@ -402,7 +405,9 @@ class ScanCB : public NimBLEScanCallbacks {
 #endif
     if (inetx_enabled() && ble_proto_on(BLE_P_INETX) && inetx_on_adv(dev)) return;
     if (hymer_enabled() && ble_proto_on(BLE_P_HYMER) && hymer_on_adv(dev)) return;
-    if (hobby_ble_needed() && hobby_on_adv(dev)) return;   // HobbyConnect-Box
+    if (hobby_ble_needed() && hobby_on_adv(dev)) return;
+    if (votronic_ble_needed() && votronic_on_adv(dev)) return;
+  if (shb_ble_needed() && shb_on_adv(dev)) return;   // HobbyConnect-Box
     bool truma = false;
     std::string mac = lower(dev->getAddress().toString());
     if (dev->haveManufacturerData()) {
@@ -413,8 +418,10 @@ class ScanCB : public NimBLEScanCallbacks {
         return;
       }
       if (mid == VICTRON_MANUFACTURER_ID) {
-        if (ble_proto_on(BLE_P_VICTRON))
+        if (ble_proto_on(BLE_P_VICTRON)) {
           victron_on_adv(mac, (const uint8_t *)md.data(), md.size(), dev->getRSSI(), dev->haveName() ? dev->getName() : "");
+          vctl_on_adv(mac, dev->getAddress().getType());
+        }
         return;
       }
       if (ble_proto_on(BLE_P_MOPEKA) && mopeka_on_adv(mac, (const uint8_t *)md.data(), md.size(), dev->getRSSI())) return;
@@ -507,7 +514,7 @@ static bool ble_needed_soon() {
   return truma || (ble_proto_on(BLE_P_VICTRON) && victron_has_devices()) ||
          (ble_proto_on(BLE_P_MOPEKA) && mopeka_has_devices()) || (ble_proto_on(BLE_P_BMS) && bms_has_devices()) ||
          (inetx_enabled() && ble_proto_on(BLE_P_INETX)) || (hymer_enabled() && ble_proto_on(BLE_P_HYMER)) ||
-         ble_proto_on(BLE_P_SAT) || hobby_ble_needed();
+         ble_proto_on(BLE_P_SAT) || hobby_ble_needed() || votronic_ble_needed() || vctl_ble_needed() || shb_ble_needed();
 }
 
 static void worker(void *) {
@@ -604,6 +611,34 @@ static void worker(void *) {
       }
     }
     hobby_ble_loop();
+    // Votronic S-BC: Dauerverbindung mit Kopplung (PIN), Werte kommen als Meldungen (votronic.cpp)
+    if (votronic_ble_needed()) {
+      votronic_scan_wanted(want_passive, want_active);
+      if (votronic_want_connect()) {
+        ble_init();
+        scan_stop();
+        votronic_connect_now();
+        scanning = s_ble_ready && NimBLEDevice::getScan()->isScanning();
+      }
+    }
+    votronic_ble_loop();
+    // Victron bedienen (Orion ein/aus, Ladestrom): kurz verbinden, schreiben, trennen (victron_ctl.cpp)
+    if (vctl_want_connect()) {
+      ble_init();
+      scan_stop();
+      vctl_connect_now();
+      scanning = s_ble_ready && NimBLEDevice::getScan()->isScanning();
+    }
+    // Shelly per Bluetooth: kurz verbinden, Befehle senden, Stand lesen, trennen (shelly_ble.cpp)
+    if (shb_ble_needed()) {
+      shb_scan_wanted(want_passive, want_active);
+      if (shb_want_connect()) {
+        ble_init();
+        scan_stop();
+        shb_connect_now();
+        scanning = s_ble_ready && NimBLEDevice::getScan()->isScanning();
+      }
+    }
     // Satellit einrichten (Knopf am Panel): verbinden und WLAN-Daten uebertragen, solange der Scan pausiert
     if (satpair_want_connect()) {
       ble_init();

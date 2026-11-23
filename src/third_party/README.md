@@ -11,3 +11,5 @@ not the project licence (PolyForm Noncommercial).
 
 `uecc_ef.c/.h` und `uecc_p256.c/.h` sind kleine eigene Hüllen (Namenspräfix, Einstellungen) um micro-ecc.
 `uecc_ef.c/.h` and `uecc_p256.c/.h` are small wrappers of our own (name prefix, settings) around micro-ecc.
+
+- `microlink/` – Tailscale-kompatibler Client (CamM2325/microlink, MIT; wireguard-lwip BSD-3-Clause), siehe `microlink/README.md`.

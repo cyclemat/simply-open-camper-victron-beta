@@ -1,6 +1,6 @@
 {
-  "name": "Victron-Display 7\" (Waveshare ESP32-S3)",
-  "version": "0.2.5",
+  "name": "Simple Open Camper – Victron Edition 7\" (Waveshare ESP32-S3)",
+  "version": "0.2.7",
   "new_install_prompt_erase": true,
   "builds": [
     {

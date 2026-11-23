@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include "i18n/i18n.h"
+#include "dbglog.h"
 
 namespace devsetup {
 namespace {
@@ -161,6 +162,61 @@ void to_portal() {
   s_srv->send(302, "text/plain", "");
 }
 
+#if WITH_DBGLOG
+// Debug-Log (alle Geraete mit dieser Weboberflaeche): GET = Stand + Dateien | ?ring=1 = Arbeitsspeicher als Text |
+// ?file=log-NNNNN.txt = Datei herunterladen. POST {"on":bool} | {"delete":"log-NNNNN.txt"|"*"}
+void h_dbglog_get() {
+  if (s_srv->arg("ring") == "1") {
+    std::string r = dbglog_ring();
+    s_srv->sendHeader("Cache-Control", "no-store");
+    s_srv->send(200, "text/plain; charset=utf-8", String(r.c_str()));
+    return;
+  }
+  String f = s_srv->arg("file");
+  if (f.length()) {
+    std::string dir = dbglog_dir();
+    if (!dbglog_valid_name(f.c_str()) || dir.empty()) return send_err("Datei unbekannt");
+    FILE *fp = fopen((dir + "/" + f.c_str()).c_str(), "r");
+    if (!fp) return send_err("Datei nicht gefunden");
+    s_srv->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    s_srv->sendHeader("Content-Disposition", "attachment; filename=\"" + f + "\"");
+    s_srv->send(200, "text/plain; charset=utf-8", "");
+    char buf[512];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) s_srv->sendContent(buf, n);
+    fclose(fp);
+    s_srv->sendContent("");
+    return;
+  }
+  JsonDocument d;
+  d["avail"] = true;
+  d["on"] = dbglog_on();
+  d["files_ok"] = !dbglog_dir().empty();
+  d["sd"] = (bool)DBGLOG_CYD_SD;
+  d["current"] = dbglog_current();
+  d["lost"] = dbglog_lost();
+  d["ring_kb"] = (int)(dbglog_ring_size() / 1024);
+  JsonArray a = d["files"].to<JsonArray>();
+  for (auto &x : dbglog_files()) {
+    JsonObject o = a.add<JsonObject>();
+    o["name"] = x.name;
+    o["size"] = x.size;
+  }
+  send_json(200, d);
+}
+
+void h_dbglog_set() {
+  JsonDocument d;
+  if (!body(d)) return;
+  if (d["on"].is<bool>()) dbglog_set(d["on"].as<bool>());
+  if (d["delete"].is<const char *>() && !dbglog_delete(d["delete"].as<const char *>()))
+    return send_err("Datei lässt sich nicht löschen (die aktuelle bleibt, solange der Debug-Log läuft).");
+  JsonDocument r;
+  r["ok"] = true;
+  send_json(200, r);
+}
+#endif
+
 void h_not_found() {
   if (ap_active() && s_srv->hostHeader() != AP_IP.toString()) return to_portal();
   s_srv->send(404, "text/plain", "Nicht gefunden");
@@ -231,6 +287,10 @@ void begin(WebServer &srv) {
   srv.on("/api/setpw", HTTP_POST, h_setpw);
   srv.on("/api/appw", HTTP_GET, guard(h_appw_get));
   srv.on("/api/appw", HTTP_POST, guard(h_appw_set));
+#if WITH_DBGLOG
+  srv.on("/api/dbglog", HTTP_GET, guard(h_dbglog_get));
+  srv.on("/api/dbglog", HTTP_POST, guard(h_dbglog_set));
+#endif
   srv.onNotFound(h_not_found);
 }
 

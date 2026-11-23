@@ -41,6 +41,9 @@ uint32_t rd_keys_version();              // aendert sich nur, wenn die Kachellis
 bool rd_panel_seen();                    // Hauptpanel meldet sich (in den letzten 60 s)
 std::string rd_panel_ip();               // IP des Hauptpanels ("" = unbekannt)
 std::string rd_sign(const std::string &msg);   // Pruefwert (Satelliten-Passwort) fuer HTTP-Anfragen ans Hauptpanel
+// Schlanker HTTP-Abruf beim Hauptpanel (statt HTTPClient: spart Flash und IRAM). body leer = GET, sonst POST (JSON).
+// Liefert den HTTP-Code (<0 = keine Verbindung/Zeitueberschreitung), Antwort in out (hoechstens 64 KB).
+int rd_http(const std::string &path, const std::string &sig, const std::string &body, std::string &out);
 std::string rd_status();                 // fuer die Weboberflaeche
 void rd_mqtt_in(const std::string &sub, const char *data, size_t len);   // aus sat_send.cpp (MQTT-Task)
 void rd_mqtt_reconnected();              // MQTT neu verbunden: Kachel-Abos neu anlegen

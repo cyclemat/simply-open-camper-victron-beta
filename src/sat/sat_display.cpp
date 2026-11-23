@@ -24,6 +24,7 @@
 #endif
 #include "../mopeka.h"
 #include "../truma.h"
+#include "../victron_ctl.h"
 #include "../victron.h"
 #include "../bms.h"
 #if WITH_CERBO
@@ -277,7 +278,7 @@ static Item vic_item(const VictronInfo &v, const std::string &key) {
   it.key = key;
   it.name = v.name.empty() ? std::string(tr(victron_kind_text(v.kind))) : v.name;
   it.accent = v.has ? C_BLUE : C_TEXT3;
-  if (v.gx && (v.can_limit || v.can_mode)) it.ctl = v.key;
+  if (v.can_limit || v.can_mode) it.ctl = v.key;   // GX (MultiPlus/Ladegeraet/Orion) oder Orion per Bluetooth
   switch (v.kind) {
     case VIC_SOLAR: it.icon = ICON_SUN; break;
     case VIC_SHUNT: it.icon = ICON_BATTERY; break;
@@ -615,6 +616,7 @@ static int pages() {
 // Die LVGL-Objekte entstehen erst beim Oeffnen und werden beim Schliessen wieder geloescht.
 struct PopV {
   std::string name;
+  bool dcdc = false;      // Orion: "Ladestrom (max.)" 1–50 A statt Netzstrom-Begrenzung
   bool can_limit = false, can_mode = false;
   uint8_t mode_set = 0;   // 0 MultiPlus, 1 Ladegeraet
   int mode = -1;
@@ -633,8 +635,9 @@ static bool pop_get(const std::string &key, PopV &p) {
   return true;
 #else
   VictronInfo v;
-  if (!cerbo_get(key, v) || (!v.can_limit && !v.can_mode)) return false;
+  if (!victron_get(key, v) || (!v.can_limit && !v.can_mode)) return false;
   p.name = v.mode_set == 0 ? std::string("MultiPlus") : v.name;
+  p.dcdc = v.kind == VIC_DCDC;
   p.can_limit = v.can_limit;
   p.can_mode = v.can_mode;
   p.mode_set = v.mode_set;
@@ -647,6 +650,7 @@ static bool pop_set_limit(const std::string &key, float a) {
 #if SAT_REMOTE
   return rd_set(key, 'l', (int)lroundf(a * 10));
 #else
+  if (key.rfind(VICTRON_KEY_PREFIX, 0) == 0) return vctl_set_limit(key.substr(strlen(VICTRON_KEY_PREFIX)), a);
   return cerbo_set_limit(key, a);
 #endif
 }
@@ -654,6 +658,7 @@ static bool pop_set_mode(const std::string &key, int m) {
 #if SAT_REMOTE
   return rd_set(key, 'm', m);
 #else
+  if (key.rfind(VICTRON_KEY_PREFIX, 0) == 0) return vctl_set_mode(key.substr(strlen(VICTRON_KEY_PREFIX)), m);
   return cerbo_set_mode(key, m);
 #endif
 }
@@ -662,6 +667,7 @@ static lv_obj_t *s_pop = nullptr, *s_pop_lim = nullptr;
 static lv_obj_t *s_pop_mbtn[4];
 static int s_pop_mval[4], s_pop_nm = 0;
 static std::string s_pop_key;
+static bool s_pop_dcdc = false;
 static float s_pop_val = NAN;
 static uint32_t s_pop_send_ms = 0, s_pop_edit_ms = 0;
 
@@ -696,8 +702,9 @@ static void pop_step_cb(lv_event_t *e) {
   int d = (int)(intptr_t)lv_event_get_user_data(e);
   if (isnan(s_pop_val)) return;
   float v = roundf(s_pop_val) + d;
-  if (v < 0) v = 0;
-  if (v > 100) v = 100;
+  float lo = s_pop_dcdc ? 1 : 0, hi = s_pop_dcdc ? 50 : 100;
+  if (v < lo) v = lo;
+  if (v > hi) v = hi;
   s_pop_val = v;
   pop_show_limit();
   s_pop_edit_ms = millis();
@@ -741,7 +748,11 @@ static void pop_open(const std::string &key) {
   PopV v;
   if (s_pop || !pop_get(key, v)) return;
   s_pop_key = key;
+  s_pop_dcdc = v.dcdc;
   s_pop_val = v.limit;
+#if !SAT_REMOTE
+  if (v.dcdc && key.rfind(VICTRON_KEY_PREFIX, 0) == 0) vctl_refresh(key.substr(strlen(VICTRON_KEY_PREFIX)));   // Stand lesen
+#endif
   s_pop_send_ms = s_pop_edit_ms = 0;
   s_pop = lv_obj_create(lv_scr_act());
   lv_obj_remove_style_all(s_pop);
@@ -757,7 +768,7 @@ static void pop_open(const std::string &key) {
   pop_btn("Fertig", W - 92, 6, 84, 34, pop_close_cb, 0);
   int y = 50;
   if (v.can_limit) {
-    lv_obj_set_pos(pop_label(s_pop, "Netzstrom-Begrenzung", &font_ui_16, C_TEXT2), 12, y);
+    lv_obj_set_pos(pop_label(s_pop, v.dcdc ? "Ladestrom (max.)" : "Netzstrom-Begrenzung", &font_ui_16, C_TEXT2), 12, y);
     y += 22;
     pop_btn("–", 12, y, 72, 44, pop_step_cb, -1);
     pop_btn("+", W - 84, y, 72, 44, pop_step_cb, 1);
